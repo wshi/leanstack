@@ -80,9 +80,8 @@ The repo intentionally starts with a narrow vertical slice:
 
 1. known-good cuTile kernel bring-up
 2. remote artifact capture
-3. adapter contract for GLM-family models
+3. adapter contract for Qwen-family models
 4. minimal runtime that can execute one prefill and one decode loop
 5. API layer only after the execution path is stable
 
 This keeps the stack understandable while still targeting a full model run.
-

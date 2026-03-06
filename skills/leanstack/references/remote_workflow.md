@@ -14,6 +14,8 @@ The shared entry point is `../remote.sh`, which currently resolves to the DGX Sp
 2. `./scripts/remote_sync.sh`
 3. `./scripts/remote_verify.sh`
 4. `./scripts/remote_model_probe.sh`
+5. `./scripts/remote_qwen_fetch.sh`
+6. `./scripts/remote_qwen_baseline.sh`
 
 ## Expected remote locations
 
@@ -31,9 +33,9 @@ The shared entry point is `../remote.sh`, which currently resolves to the DGX Sp
 
 ## Model bring-up expectations
 
-Before attempting a GLM-family run:
+Before attempting a Qwen-first run:
 
 1. collect a fresh probe report
 2. verify the target checkpoint from primary sources
-3. install model-runtime dependencies if needed
+3. confirm whether Hugging Face is reachable; if not, use `remote_qwen_fetch.sh` through ModelScope or fall back to Mac relay
 4. confirm kernel coverage gaps explicitly

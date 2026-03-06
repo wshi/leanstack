@@ -1,6 +1,6 @@
 ---
 name: leanstack
-description: Operate and extend the leanstack repository, a clean-slate TileIR-first LLM inference stack built to simplify and compress the serving software stack. Use this skill when Codex needs to plan the stack, add or validate cuTile kernels, sync code to the DGX Spark machine through ../remote.sh, collect remote artifacts, prepare a GLM-family adapter, or tighten the runtime without falling back to legacy vLLM-style architecture.
+description: Operate and extend the leanstack repository, a clean-slate TileIR-first LLM inference stack built to simplify and compress the serving software stack. Use this skill when Codex needs to plan the stack, add or validate cuTile kernels, sync code to the DGX Spark machine through ../remote.sh, collect remote artifacts, prepare a Qwen-first adapter roadmap, or tighten the runtime without falling back to legacy vLLM-style architecture.
 ---
 
 # Leanstack
@@ -21,7 +21,8 @@ Use this skill when working in `/Users/wei/work/spark/leanstack`.
 3. `docs/EXECUTION_PLAN.md`
 4. `docs/REMOTE_VALIDATION.md`
 5. `docs/MODEL_TARGETS.md`
-6. `references/remote_workflow.md`
+6. `docs/MODEL_FIT_ANALYSIS.md`
+7. `references/remote_workflow.md`
 
 ## Default workflow
 
@@ -45,12 +46,13 @@ Use this skill when working in `/Users/wei/work/spark/leanstack`.
 3. Run `./scripts/remote_verify.sh` for compiler smoke.
 4. Run `./scripts/remote_model_probe.sh` before attempting a model adapter bring-up.
 5. Use `./scripts/remote_install_runtime.sh` only when model-runtime dependencies are missing.
-6. Use `./scripts/remote_glm_baseline.sh` to separate plain model-loading issues from runtime-design issues.
-7. Use `./scripts/relay_url_to_remote.sh` or `./scripts/push_local_file_to_remote.sh` when the remote machine cannot access a download source directly.
+6. Use `./scripts/remote_qwen_fetch.sh` to populate the first target model under `/home/pto/lean/models`.
+7. Use `./scripts/remote_model_baseline.sh` or `./scripts/remote_qwen_baseline.sh` to separate plain model-loading issues from runtime-design issues.
+8. Use `./scripts/relay_url_to_remote.sh` or `./scripts/push_local_file_to_remote.sh` when the remote machine cannot access a download source directly.
 
-### GLM-family work
+### Qwen-first work
 
-1. Verify the exact checkpoint from primary sources before calling it the current target.
+1. Keep `Qwen/Qwen3-32B` as the first adapter target unless the user redirects the plan.
 2. Record the verification date in the working notes or user summary.
 3. Translate the model into explicit kernel requirements before importing framework code.
 4. Keep adapter rules in code or docs, never as hidden assumptions.
@@ -59,7 +61,7 @@ Use this skill when working in `/Users/wei/work/spark/leanstack`.
 
 - Do not patch legacy vLLM code into this repo.
 - Do not commit remote artifacts or downloaded model weights.
-- Do not claim a “latest” GLM checkpoint without a dated, primary-source verification.
+- Do not silently switch the primary model family without explicit user confirmation.
 - Do not hide missing kernel coverage behind a framework fallback.
 
 ## Useful commands
@@ -67,9 +69,11 @@ Use this skill when working in `/Users/wei/work/spark/leanstack`.
 ```bash
 PYTHONPATH=src python3 -m leanstack.cli show-plan
 PYTHONPATH=src python3 -m leanstack.cli remote-env
-PYTHONPATH=src python3 -m leanstack.cli show-blueprint --model glm
+PYTHONPATH=src python3 -m leanstack.cli show-blueprint --model qwen
 ./scripts/remote_bootstrap.sh
 ./scripts/remote_sync.sh
 ./scripts/remote_verify.sh
 ./scripts/remote_model_probe.sh
+./scripts/remote_qwen_fetch.sh
+./scripts/remote_qwen_baseline.sh
 ```

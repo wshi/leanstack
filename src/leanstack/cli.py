@@ -20,7 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     models.set_defaults(handler=handle_list_models)
 
     blueprint = subparsers.add_parser("show-blueprint", help="Print the runtime blueprint for a model.")
-    blueprint.add_argument("--model", default="glm")
+    blueprint.add_argument("--model", default="qwen")
     blueprint.set_defaults(handler=handle_show_blueprint)
 
     remote_env = subparsers.add_parser("remote-env", help="Probe the configured remote environment.")

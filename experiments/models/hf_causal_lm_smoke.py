@@ -10,9 +10,9 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run a baseline Hugging Face GLM smoke test.")
-    parser.add_argument("--model-id", default="zai-org/glm-4-9b-hf")
-    parser.add_argument("--prompt", default="Summarize why a TileIR-first serving stack is useful.")
+    parser = argparse.ArgumentParser(description="Run a baseline Hugging Face causal LM smoke test.")
+    parser.add_argument("--model-id", default="Qwen/Qwen3-32B")
+    parser.add_argument("--prompt", default="Summarize why a lean, TileIR-first serving stack is useful.")
     parser.add_argument("--max-new-tokens", type=int, default=64)
     parser.add_argument("--dtype", choices=("auto", "bfloat16"), default="bfloat16")
     parser.add_argument("--trust-remote-code", action="store_true")
@@ -75,4 +75,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

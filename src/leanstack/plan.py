@@ -28,8 +28,8 @@ DEFAULT_PHASES: tuple[PlanPhase, ...] = (
     ),
     PlanPhase(
         name="Phase 3",
-        goal="Land the first model adapter, starting with GLM once the checkpoint is verified.",
-        exit_gate="Single-request prefill and decode execute on the remote machine.",
+        goal="Land the first model adapter, starting with Qwen/Qwen3-32B once the download path is verified.",
+        exit_gate="Single-request prefill and decode execute for Qwen/Qwen3-32B on the remote machine.",
     ),
     PlanPhase(
         name="Phase 4",
@@ -45,4 +45,3 @@ def render_plan() -> str:
         lines.append(f"{phase.name}: {phase.goal}")
         lines.append(f"  Exit gate: {phase.exit_gate}")
     return "\n".join(lines)
-

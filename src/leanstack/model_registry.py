@@ -4,10 +4,29 @@ from .config import ModelSpec
 
 
 MODEL_REGISTRY: dict[str, ModelSpec] = {
+    "qwen": ModelSpec(
+        key="qwen",
+        family="Qwen-family",
+        loader_hint="First target: start with Qwen/Qwen3-32B and keep the adapter dense, explicit, and framework-light.",
+        dtype="bfloat16",
+        kv_layout="paged grouped-query attention",
+        required_kernels=("rmsnorm", "rope", "paged-attention", "gated-mlp", "sampler"),
+        bring_up_sequence=(
+            "load tokenizer and config",
+            "verify dense transformer block layout",
+            "bring up one block forward path",
+            "bring up prefill",
+            "bring up decode with KV reuse",
+        ),
+        notes=(
+            "Prefer ModelScope or relay-based download if Hugging Face is unreachable from the remote host.",
+            "Keep Qwen as the first adapter until the runtime spine is stable.",
+        ),
+    ),
     "glm": ModelSpec(
         key="glm",
         family="GLM-family",
-        loader_hint="Confirm the exact remote target checkpoint from official sources before wiring the adapter.",
+        loader_hint="Second-family target: preserve GLM work after the Qwen path is stable, starting with zai-org/glm-4-9b-hf.",
         dtype="bfloat16",
         kv_layout="grouped-query attention with explicit paged KV blocks",
         required_kernels=(
@@ -33,18 +52,10 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
     "llama": ModelSpec(
         key="llama",
         family="Llama-family",
-        loader_hint="Useful as a fallback adapter if GLM coverage reveals missing kernels.",
+        loader_hint="Useful as a fallback dense adapter if Qwen coverage reveals a tooling issue unrelated to model family specifics.",
         dtype="bfloat16",
         kv_layout="paged causal attention",
         required_kernels=("rmsnorm", "rope", "paged-attention", "silu-mlp", "sampler"),
-    ),
-    "qwen": ModelSpec(
-        key="qwen",
-        family="Qwen-family",
-        loader_hint="Useful as a second adapter once the runtime spine is stable.",
-        dtype="bfloat16",
-        kv_layout="paged causal attention",
-        required_kernels=("rmsnorm", "rope", "paged-attention", "gated-mlp", "sampler"),
     ),
 }
 
@@ -60,4 +71,3 @@ def get_model_spec(key: str) -> ModelSpec:
 
 def list_models() -> list[ModelSpec]:
     return [MODEL_REGISTRY[key] for key in sorted(MODEL_REGISTRY)]
-

@@ -2,27 +2,29 @@
 
 Date verified: 2026-03-06
 
-## Official GLM checkpoints to track
+## Primary target
 
-### Long-term target
-
-- `zai-org/GLM-5-FP8`
+- `Qwen/Qwen3-32B`
 
 Primary source:
 
-- `https://huggingface.co/zai-org/GLM-5-FP8`
+- `https://huggingface.co/Qwen/Qwen3-32B`
+- `https://www.modelscope.cn/models/Qwen/Qwen3-32B`
 
-Why it matters:
+Why it is the first target:
 
-- it is the most recent official open-weight GLM-family checkpoint visible from the official `zai-org` Hugging Face organization as of 2026-03-06
-- it reflects the actual frontier target for the stack
+- dense causal LM
+- standard grouped-query attention path
+- simpler cuTile kernel decomposition than frontier MoE and MLA models
+- strong enough to be a credible first end-to-end target
+- realistic fit for a single GB10-class machine compared with larger frontier MoE models
 
-Why it is not the first runtime target on this machine:
+Current blocker:
 
-- the model card describes multi-GPU deployment expectations
-- a single GB10 with 128 GB device memory is not the right bring-up target for this checkpoint
+- as of 2026-03-06, the DGX Spark machine times out when requesting Hugging Face model artifacts directly
+- the remote machine can reach ModelScope metadata and can download the `modelscope` wheel, so relay or mirror-based download should be part of the first deployment workflow
 
-### First runnable baseline target
+## Second-family target to preserve
 
 - `zai-org/glm-4-9b-hf`
 
@@ -30,30 +32,30 @@ Primary source:
 
 - `https://huggingface.co/zai-org/glm-4-9b-hf`
 
-Why it is the right first baseline:
+Why it stays in scope:
 
 - official GLM-family checkpoint
-- Hugging Face-compatible layout
-- realistic fit for a single 128 GB GB10
-- good enough to validate tokenizer, weight loading, prefill, and decode plumbing before scaling up
+- still the cleanest GLM-family bring-up point once the Qwen path is stable
 
-## Working decision
+## Deferred frontier GLM target
 
-Use two tracks instead of forcing one target:
+- `zai-org/GLM-5-FP8`
 
-1. `GLM-5-FP8` remains the architecture target for kernel and runtime planning.
-2. `glm-4-9b-hf` is the first practical checkpoint for remote end-to-end smoke and adapter bring-up.
+Primary source:
+
+- `https://huggingface.co/zai-org/GLM-5-FP8`
+
+Why it is deferred:
+
+- the model card indicates a far heavier deployment shape
+- not the right first target for a lean, single-machine cuTile bring-up
 
 ## What success means
 
 ### Baseline success
 
-- remote machine can download config, tokenizer, and weights for the selected GLM-family checkpoint
+- remote machine can download config, tokenizer, and weights for `Qwen/Qwen3-32B` or ingest them via relay
 - one prompt can run through a simple Hugging Face baseline
-
-Current blocker:
-
-- as of 2026-03-06, the DGX Spark machine times out when requesting Hugging Face model artifacts directly, so model download needs a mirror, proxy, or pre-staged weights
 
 ### Stack success
 

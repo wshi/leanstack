@@ -18,7 +18,9 @@ The scripts in this repo create and use:
 2. `./scripts/remote_sync.sh`
 3. `./scripts/remote_verify.sh`
 4. `./scripts/remote_model_probe.sh`
-5. `./scripts/relay_url_to_remote.sh` or `./scripts/push_local_file_to_remote.sh` if the remote machine cannot download an artifact directly
+5. `./scripts/remote_qwen_fetch.sh` for the primary model snapshot path
+6. `./scripts/remote_qwen_baseline.sh`
+7. `./scripts/relay_url_to_remote.sh` or `./scripts/push_local_file_to_remote.sh` if the remote machine cannot download an artifact directly
 
 ## What `remote_verify.sh` checks
 
@@ -54,3 +56,15 @@ When the remote machine cannot access a model, wheel, or archive directly:
 1. download the file on the Mac
 2. relay it to the remote machine
 3. keep the remote path under `/home/pto/lean/models`, `/home/pto/lean/tmp`, or another explicit deployment directory
+
+## Qwen acquisition workflow
+
+The primary model acquisition path is:
+
+1. `./scripts/remote_qwen_fetch.sh`
+2. let the script install `modelscope` remotely if it is missing
+3. store the downloaded snapshot under `/home/pto/lean/models`
+4. read the resolved local snapshot path from `/home/pto/lean/models/Qwen__Qwen3-32B.path`
+5. run `./scripts/remote_qwen_baseline.sh`, which prefers that local snapshot path over the public model id
+
+If ModelScope or PyPI becomes unreachable from the remote host, relay a wheel, archive, or extracted model directory from the Mac into `/home/pto/lean/models` and update the path file accordingly.

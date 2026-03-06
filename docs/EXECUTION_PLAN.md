@@ -22,7 +22,7 @@ Deliverables:
 - RMSNorm kernel
 - rotary embedding kernel
 - paged attention microkernel plan
-- MLP fusion plan for GLM-family blocks
+- MLP fusion plan for Qwen-family blocks
 
 Exit gate:
 
@@ -45,7 +45,7 @@ Exit gate:
 
 Target:
 
-- a recent GLM-family checkpoint verified against official sources before selection
+- `Qwen/Qwen3-32B` as the first target, with a second-family adapter after the Qwen path is stable
 
 Deliverables:
 
@@ -57,7 +57,7 @@ Deliverables:
 
 Exit gate:
 
-- single-request prefill and decode execute on the remote machine
+- single-request prefill and decode execute for `Qwen/Qwen3-32B` on the remote machine
 
 ## Phase 4: End-to-end serving
 
@@ -70,7 +70,7 @@ Deliverables:
 
 Exit gate:
 
-- remote machine serves one GLM-family checkpoint through the new stack
+- remote machine serves `Qwen/Qwen3-32B` through the new stack
 
 ## Phase 5: Tighten performance
 
@@ -88,6 +88,6 @@ Exit gate:
 ## Current blockers to clear
 
 1. Install and verify a dedicated remote runtime environment with `torch`, `transformers`, `safetensors`, and `sentencepiece`.
-2. Confirm the target GLM-family checkpoint and its loading requirements from primary sources.
-3. Resolve remote access to model artifacts. As of 2026-03-06, direct `curl` access to Hugging Face model files times out on the DGX Spark machine, so the Mac relay path must be part of the workflow.
+2. Confirm the target Qwen-family checkpoint and its loading requirements from primary sources.
+3. Resolve remote access to model artifacts. As of 2026-03-06, direct `curl` access to Hugging Face model files times out on the DGX Spark machine, while ModelScope metadata and `modelscope` package download are reachable, so mirror or relay-based download must be part of the workflow.
 4. Translate the first transformer block into explicit kernel requirements instead of importing a monolithic runtime.

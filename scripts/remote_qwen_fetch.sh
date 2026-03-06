@@ -1,0 +1,16 @@
+#!/usr/bin/env zsh
+set -eu
+set -o pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REMOTE_HOME="${REMOTE_HOME:-/home/pto/lean}"
+MODEL_ID="${MODEL_ID:-Qwen/Qwen3-32B}"
+MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-$REMOTE_HOME/models}"
+MODEL_PATH_FILE="${MODEL_PATH_FILE:-$MODEL_CACHE_DIR/Qwen__Qwen3-32B.path}"
+MODEL_REVISION="${MODEL_REVISION:-}"
+
+MODEL_ID="$MODEL_ID" \
+MODEL_CACHE_DIR="$MODEL_CACHE_DIR" \
+MODEL_PATH_FILE="$MODEL_PATH_FILE" \
+MODEL_REVISION="$MODEL_REVISION" \
+"$ROOT/scripts/remote_modelscope_fetch.sh"
