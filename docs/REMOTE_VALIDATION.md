@@ -67,4 +67,8 @@ The primary model acquisition path is:
 4. read the resolved local snapshot path from `/home/pto/lean/models/Qwen__Qwen3-32B.path`
 5. run `./scripts/remote_qwen_baseline.sh`, which prefers that local snapshot path over the public model id
 
+For a low-risk preflight, run:
+
+- `MODEL_ALLOW_PATTERN='*.json' ./scripts/remote_qwen_fetch.sh`
+
 If ModelScope or PyPI becomes unreachable from the remote host, relay a wheel, archive, or extracted model directory from the Mac into `/home/pto/lean/models` and update the path file accordingly.

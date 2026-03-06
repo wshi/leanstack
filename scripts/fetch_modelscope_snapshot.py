@@ -10,6 +10,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-id", required=True)
     parser.add_argument("--cache-dir", required=True)
     parser.add_argument("--revision")
+    parser.add_argument("--allow-pattern", action="append")
     parser.add_argument("--path-file")
     return parser.parse_args()
 
@@ -28,12 +29,14 @@ def main() -> int:
         model_id=args.model_id,
         cache_dir=args.cache_dir,
         revision=args.revision,
+        allow_file_pattern=args.allow_pattern,
     )
 
     payload = {
         "model_id": args.model_id,
         "cache_dir": str(Path(args.cache_dir).expanduser().resolve()),
         "revision": args.revision,
+        "allow_pattern": args.allow_pattern,
         "resolved_path": resolved_path,
     }
     text = json.dumps(payload, indent=2)

@@ -9,6 +9,7 @@ REMOTE_REPO="$REMOTE_HOME/repo"
 MODEL_ID="${MODEL_ID:?set MODEL_ID to a ModelScope model id}"
 MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-$REMOTE_HOME/models}"
 MODEL_REVISION="${MODEL_REVISION:-}"
+MODEL_ALLOW_PATTERN="${MODEL_ALLOW_PATTERN:-}"
 MODELSCOPE_SPEC="${MODELSCOPE_SPEC:-modelscope}"
 VENV_ACTIVATE="${VENV_ACTIVATE:-/home/pto/venv-cutile/bin/activate}"
 MODEL_KEY="${MODEL_ID//\//__}"
@@ -23,6 +24,7 @@ REMOTE_REPO=\"$REMOTE_REPO\"; \
 MODEL_ID=\"$MODEL_ID\"; \
 MODEL_CACHE_DIR=\"$MODEL_CACHE_DIR\"; \
 MODEL_REVISION=\"$MODEL_REVISION\"; \
+MODEL_ALLOW_PATTERN=\"$MODEL_ALLOW_PATTERN\"; \
 MODEL_PATH_FILE=\"$MODEL_PATH_FILE\"; \
 MODELSCOPE_SPEC=\"$MODELSCOPE_SPEC\"; \
 VENV_ACTIVATE=\"$VENV_ACTIVATE\"; \
@@ -31,6 +33,7 @@ if [[ -f \"\$VENV_ACTIVATE\" ]]; then source \"\$VENV_ACTIVATE\"; fi; \
 python3 -c \"import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('modelscope') else 1)\" || python3 -m pip install \"\$MODELSCOPE_SPEC\"; \
 FETCH_ARGS=(--model-id \"\$MODEL_ID\" --cache-dir \"\$MODEL_CACHE_DIR\" --path-file \"\$MODEL_PATH_FILE\"); \
 if [[ -n \"\$MODEL_REVISION\" ]]; then FETCH_ARGS+=(--revision \"\$MODEL_REVISION\"); fi; \
+if [[ -n \"\$MODEL_ALLOW_PATTERN\" ]]; then FETCH_ARGS+=(--allow-pattern \"\$MODEL_ALLOW_PATTERN\"); fi; \
 python3 \"\$REMOTE_REPO/scripts/fetch_modelscope_snapshot.py\" \"\${FETCH_ARGS[@]}\"; \
 printf \"Resolved model path file: %s\n\" \"\$MODEL_PATH_FILE\"; \
 cat \"\$MODEL_PATH_FILE\""

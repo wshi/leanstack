@@ -67,6 +67,12 @@ If the remote machine cannot access a site directly, download on the Mac and rel
 
 `remote_qwen_fetch.sh` installs `modelscope` on the remote host if needed, downloads `Qwen/Qwen3-32B` into `/home/pto/lean/models`, and records the resolved local snapshot path so `remote_qwen_baseline.sh` can prefer the local copy over Hugging Face.
 
+For a metadata-only preflight before downloading the full checkpoint:
+
+```bash
+MODEL_ALLOW_PATTERN='*.json' ./scripts/remote_qwen_fetch.sh
+```
+
 ## Current status
 
 As of 2026-03-06, the first milestone is a compiler-grounded vertical slice:
