@@ -6,11 +6,11 @@ The DGX Spark machine is accessed through `../remote.sh` and treated as the syst
 
 The scripts in this repo create and use:
 
-- `/home/pto/leanstack/repo`
-- `/home/pto/leanstack/artifacts`
-- `/home/pto/leanstack/logs`
-- `/home/pto/leanstack/models`
-- `/home/pto/leanstack/tmp`
+- `/home/pto/lean/repo`
+- `/home/pto/lean/artifacts`
+- `/home/pto/lean/logs`
+- `/home/pto/lean/models`
+- `/home/pto/lean/tmp`
 
 ## Validation loop
 
@@ -18,6 +18,7 @@ The scripts in this repo create and use:
 2. `./scripts/remote_sync.sh`
 3. `./scripts/remote_verify.sh`
 4. `./scripts/remote_model_probe.sh`
+5. `./scripts/relay_url_to_remote.sh` or `./scripts/push_local_file_to_remote.sh` if the remote machine cannot download an artifact directly
 
 ## What `remote_verify.sh` checks
 
@@ -34,7 +35,7 @@ The smoke script does all of the following on the remote host:
 
 Each validation run writes a timestamped artifact directory:
 
-`/home/pto/leanstack/artifacts/<UTC timestamp>`
+`/home/pto/lean/artifacts/<UTC timestamp>`
 
 The expected structure is:
 
@@ -45,3 +46,11 @@ The expected structure is:
 - `logs/`
 
 No generated artifact should be committed back into the repo.
+
+## Mac relay workflow
+
+When the remote machine cannot access a model, wheel, or archive directly:
+
+1. download the file on the Mac
+2. relay it to the remote machine
+3. keep the remote path under `/home/pto/lean/models`, `/home/pto/lean/tmp`, or another explicit deployment directory

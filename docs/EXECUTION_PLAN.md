@@ -6,7 +6,7 @@ Date: 2026-03-06
 
 Deliverables:
 
-- fixed remote workspace under `/home/pto/leanstack`
+- fixed remote workspace under `/home/pto/lean`
 - repeatable sync and validation scripts
 - environment probe for CUDA, cuTile, Python, and model-runtime dependencies
 
@@ -89,5 +89,5 @@ Exit gate:
 
 1. Install and verify a dedicated remote runtime environment with `torch`, `transformers`, `safetensors`, and `sentencepiece`.
 2. Confirm the target GLM-family checkpoint and its loading requirements from primary sources.
-3. Resolve remote access to model artifacts. As of 2026-03-06, direct `curl` access to Hugging Face model files times out on the DGX Spark machine.
+3. Resolve remote access to model artifacts. As of 2026-03-06, direct `curl` access to Hugging Face model files times out on the DGX Spark machine, so the Mac relay path must be part of the workflow.
 4. Translate the first transformer block into explicit kernel requirements instead of importing a monolithic runtime.

@@ -46,6 +46,7 @@ Use this skill when working in `/Users/wei/work/spark/leanstack`.
 4. Run `./scripts/remote_model_probe.sh` before attempting a model adapter bring-up.
 5. Use `./scripts/remote_install_runtime.sh` only when model-runtime dependencies are missing.
 6. Use `./scripts/remote_glm_baseline.sh` to separate plain model-loading issues from runtime-design issues.
+7. Use `./scripts/relay_url_to_remote.sh` or `./scripts/push_local_file_to_remote.sh` when the remote machine cannot access a download source directly.
 
 ### GLM-family work
 

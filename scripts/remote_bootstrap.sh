@@ -4,7 +4,7 @@ set -o pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REMOTE_SCRIPT="${REMOTE_SCRIPT:-$ROOT/../remote.sh}"
-REMOTE_HOME="${REMOTE_HOME:-/home/pto/leanstack}"
+REMOTE_HOME="${REMOTE_HOME:-/home/pto/lean}"
 source "$ROOT/scripts/remote_helpers.sh"
 
 load_remote_cmd "$REMOTE_SCRIPT"

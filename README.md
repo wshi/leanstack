@@ -28,11 +28,12 @@ Stage 0 in this repo does three concrete things:
 
 - `docs/ARCHITECTURE.md`: stack boundaries and replacement strategy.
 - `docs/EXECUTION_PLAN.md`: phased build plan and verification gates.
+- `docs/MODEL_FIT_ANALYSIS.md`: frontier-model architecture fit versus cuTile complexity.
 - `docs/MODEL_TARGETS.md`: verified model targets and hardware-fit decisions.
 - `docs/REMOTE_VALIDATION.md`: remote workflow and artifact layout.
 - `experiments/cutile/vector_add.py`: known-good cuTile smoke kernel.
 - `experiments/models/hf_glm_smoke.py`: baseline Hugging Face GLM smoke path.
-- `scripts/remote_*.sh`: remote bootstrap, sync, probe, install, and smoke scripts.
+- `scripts/remote_*.sh`: remote bootstrap, sync, relay, probe, install, and smoke scripts.
 - `src/leanstack/`: Python control plane, planning, and repo utilities.
 - `skills/leanstack/`: English Codex skill for operating the stack.
 
@@ -53,6 +54,13 @@ If remote Python runtime packages are missing:
 
 ```bash
 ./scripts/remote_install_runtime.sh
+```
+
+If the remote machine cannot access a site directly, download on the Mac and relay it:
+
+```bash
+./scripts/relay_url_to_remote.sh <url> <remote-path>
+./scripts/push_local_file_to_remote.sh <local-path> <remote-path>
 ```
 
 ## Current status

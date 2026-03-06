@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 class RemoteEndpoint:
     user_host: str
     port: int
-    workspace: str = "/home/pto/leanstack"
+    workspace: str = "/home/pto/lean"
     cutile_env: str = "/home/pto/venv-cutile"
     ssh_command: tuple[str, ...] = ()
 

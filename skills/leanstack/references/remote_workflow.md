@@ -17,10 +17,10 @@ The shared entry point is `../remote.sh`, which currently resolves to the DGX Sp
 
 ## Expected remote locations
 
-- `/home/pto/leanstack/repo`
-- `/home/pto/leanstack/artifacts`
-- `/home/pto/leanstack/logs`
-- `/home/pto/leanstack/models`
+- `/home/pto/lean/repo`
+- `/home/pto/lean/artifacts`
+- `/home/pto/lean/logs`
+- `/home/pto/lean/models`
 
 ## Validation expectations
 
