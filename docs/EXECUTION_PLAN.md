@@ -21,8 +21,8 @@ Deliverables:
 - vector add smoke path
 - RMSNorm kernel
 - rotary embedding kernel
-- paged attention microkernel plan
-- MLP fusion plan for Qwen-family blocks
+- GQA paged-attention microkernel plan for `Qwen/Qwen3-32B`
+- SiLU-gated MLP fusion plan for `Qwen/Qwen3-32B` blocks
 
 Exit gate:
 
@@ -45,7 +45,7 @@ Exit gate:
 
 Target:
 
-- `Qwen/Qwen3-32B` as the first target, with a second-family adapter after the Qwen path is stable
+- `Qwen/Qwen3-32B` on Blackwell as the first target, with a second-family adapter after the Qwen path is stable
 
 Deliverables:
 
@@ -54,12 +54,26 @@ Deliverables:
 - tensor layout adapter
 - cache layout adapter
 - kernel coverage matrix
+- Qwen-specific prompt and thinking-mode handling for baseline runs
 
 Exit gate:
 
 - single-request prefill and decode execute for `Qwen/Qwen3-32B` on the remote machine
 
-## Phase 4: End-to-end serving
+## Phase 4: Benchmark Against Framework Baselines
+
+Deliverables:
+
+- benchmark harness for `generated tokens/s`, latency, and memory
+- official-baseline configs for `vLLM` and `SGLang`
+- secondary deployment reference for `llama.cpp`
+- comparative report that records process shape and operational complexity
+
+Exit gate:
+
+- `leanstack`, `vLLM`, and `SGLang` all run a comparable `Qwen/Qwen3-32B` profile on the same machine and a first comparison table is recorded
+
+## Phase 5: Minimal Serving Surface
 
 Deliverables:
 
@@ -70,24 +84,11 @@ Deliverables:
 
 Exit gate:
 
-- remote machine serves `Qwen/Qwen3-32B` through the new stack
-
-## Phase 5: Tighten performance
-
-Deliverables:
-
-- scheduling policy revisions
-- kernel fusion expansions
-- memory planning cleanup
-- benchmarking against a small baseline
-
-Exit gate:
-
-- the runtime remains smaller while improving real throughput
+- remote machine serves `Qwen/Qwen3-32B` through the new stack after the benchmark contract is stable
 
 ## Current blockers to clear
 
-1. Install and verify a dedicated remote runtime environment with `torch`, `transformers`, `safetensors`, and `sentencepiece`.
-2. Confirm the target Qwen-family checkpoint and its loading requirements from primary sources.
-3. Resolve remote access to model artifacts. As of 2026-03-06, direct `curl` access to Hugging Face model files times out on the DGX Spark machine, while ModelScope metadata and `modelscope` package download are reachable, so mirror or relay-based download must be part of the workflow.
-4. Translate the first transformer block into explicit kernel requirements instead of importing a monolithic runtime.
+1. Finish the full `Qwen/Qwen3-32B` checkpoint fetch on the remote machine and validate the first BF16 baseline run.
+2. Translate the first transformer block into explicit kernel requirements instead of importing a monolithic runtime.
+3. Prepare official baseline configurations for `vLLM` and `SGLang` on the same machine and model profile.
+4. Define the first benchmark table format before adding a larger serve surface.

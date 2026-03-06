@@ -19,10 +19,33 @@ Why it is the first target:
 - strong enough to be a credible first end-to-end target
 - realistic fit for a single GB10-class machine compared with larger frontier MoE models
 
+Validated configuration snapshot from the remote metadata preflight on 2026-03-06:
+
+- 64 layers
+- hidden size 5120
+- intermediate size 25600
+- 64 attention heads and 8 KV heads
+- head dimension 128
+- `hidden_act=silu`
+- `torch_dtype=bfloat16`
+- `rope_theta=1_000_000`
+- no sliding-window path in the base config
+
+Context note:
+
+- the remote `config.json` reports `max_position_embeddings=40960`
+- the official public model card states `32,768` native context and `131,072` tokens with `YaRN`
+- `leanstack` should treat the shorter public contract as the safe bring-up target until a longer-context path is explicitly validated
+
 Current blocker:
 
 - as of 2026-03-06, the DGX Spark machine times out when requesting Hugging Face model artifacts directly
 - the remote machine can reach ModelScope metadata and can download the `modelscope` wheel, so relay or mirror-based download should be part of the first deployment workflow
+
+Primary benchmark mode:
+
+- use non-thinking mode first so reasoning-length variance does not hide runtime effects
+- keep thinking-mode benchmarks as a second pass after the core throughput path is stable
 
 ## Second-family target to preserve
 

@@ -17,12 +17,15 @@ Use this skill when working in `/Users/wei/work/spark/leanstack`.
 ## First files to read
 
 1. `README.md`
-2. `docs/ARCHITECTURE.md`
-3. `docs/EXECUTION_PLAN.md`
-4. `docs/REMOTE_VALIDATION.md`
-5. `docs/MODEL_TARGETS.md`
-6. `docs/MODEL_FIT_ANALYSIS.md`
-7. `references/remote_workflow.md`
+2. `docs/PROJECT_THESIS.md`
+3. `docs/ARCHITECTURE.md`
+4. `docs/BENCHMARK_PLAN.md`
+5. `docs/EXECUTION_PLAN.md`
+6. `docs/REMOTE_VALIDATION.md`
+7. `docs/MODEL_TARGETS.md`
+8. `docs/MODEL_FIT_ANALYSIS.md`
+9. `docs/REFERENCES.md`
+10. `references/remote_workflow.md`
 
 ## Default workflow
 
@@ -56,6 +59,7 @@ Use this skill when working in `/Users/wei/work/spark/leanstack`.
 2. Record the verification date in the working notes or user summary.
 3. Translate the model into explicit kernel requirements before importing framework code.
 4. Keep adapter rules in code or docs, never as hidden assumptions.
+5. Treat non-thinking mode as the default throughput benchmark path unless the task explicitly studies reasoning mode.
 
 ## Guardrails
 
@@ -63,6 +67,7 @@ Use this skill when working in `/Users/wei/work/spark/leanstack`.
 - Do not commit remote artifacts or downloaded model weights.
 - Do not silently switch the primary model family without explicit user confirmation.
 - Do not hide missing kernel coverage behind a framework fallback.
+- Do not introduce `vLLM`, `SGLang`, `llama.cpp`, or similar frameworks as runtime dependencies; they are baselines only.
 
 ## Useful commands
 

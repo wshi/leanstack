@@ -1,6 +1,6 @@
 # leanstack
 
-`leanstack` is a clean-slate, TileIR-first LLM inference stack.
+`leanstack` is a clean-slate, cuTile-native, Blackwell-first LLM inference stack.
 
 The name is intentional:
 
@@ -9,27 +9,32 @@ The name is intentional:
 
 ## Why this repo exists
 
-The current serving ecosystem is too layered, too stateful, and too hard to reason about. This repo starts over with four constraints:
+The current serving ecosystem is too layered, too stateful, and too hard to reason about. This repo starts over with five constraints:
 
-1. The compiler path must be explicit.
-2. The runtime must stay small enough to audit.
-3. Model support must come from adapters, not hidden branches.
-4. Remote validation on the DGX Spark machine is part of the development loop, not an afterthought.
+1. The execution path must stay explicit down to `cuTile -> TileIR -> cubin -> SASS`.
+2. The runtime must stay small enough to audit and regenerate.
+3. The first model contract is `Qwen/Qwen3-32B`, not "all models."
+4. `vLLM`, `SGLang`, `llama.cpp`, and similar systems are benchmark baselines, not runtime dependencies.
+5. Remote validation on the DGX Spark machine is part of the development loop, not an afterthought.
 
 ## Scope
 
-Stage 0 in this repo does three concrete things:
+Stage 0 in this repo does four concrete things:
 
-1. Defines the target architecture for a compact LLM stack.
+1. Defines the project thesis for a compact, agent-built LLM stack.
 2. Provides local and remote tooling to validate the cuTile -> TileIR -> cubin -> SASS path.
-3. Establishes the bring-up plan for a Qwen-family adapter on the remote machine.
+3. Establishes the bring-up plan for a `Qwen/Qwen3-32B` adapter on a Blackwell-class remote machine.
+4. Defines the benchmark contract against `vLLM`, `SGLang`, and a secondary `llama.cpp` reference path.
 
 ## Repository layout
 
+- `docs/PROJECT_THESIS.md`: project thesis and hard constraints.
 - `docs/ARCHITECTURE.md`: stack boundaries and replacement strategy.
+- `docs/BENCHMARK_PLAN.md`: benchmark methodology and comparison rules.
 - `docs/EXECUTION_PLAN.md`: phased build plan and verification gates.
 - `docs/MODEL_FIT_ANALYSIS.md`: frontier-model architecture fit versus cuTile complexity.
 - `docs/MODEL_TARGETS.md`: verified model targets and hardware-fit decisions.
+- `docs/REFERENCES.md`: external research, framework, model, and hardware references.
 - `docs/REMOTE_VALIDATION.md`: remote workflow and artifact layout.
 - `experiments/cutile/vector_add.py`: known-good cuTile smoke kernel.
 - `experiments/models/hf_causal_lm_smoke.py`: baseline Hugging Face causal LM smoke path.
@@ -80,7 +85,8 @@ As of 2026-03-06, the first milestone is a compiler-grounded vertical slice:
 - local repo scaffolded from zero
 - remote cuTile smoke wired into the DGX Spark machine
 - Qwen adapter work split into explicit phases instead of being hidden inside a giant runtime
+- ModelScope-based `Qwen/Qwen3-32B` fetch path validated on the remote machine
 
-The next hard gate is a model adapter that can run `Qwen/Qwen3-32B` end to end on the remote machine.
+The next hard gate is a `Qwen/Qwen3-32B` adapter that can run end to end on the remote Blackwell machine and then be benchmarked against framework baselines.
 
 GLM remains a second-family target, but it is no longer the first bring-up path.

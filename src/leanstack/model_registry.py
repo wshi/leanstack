@@ -7,13 +7,20 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
     "qwen": ModelSpec(
         key="qwen",
         family="Qwen-family",
-        loader_hint="First target: start with Qwen/Qwen3-32B and keep the adapter dense, explicit, and framework-light.",
+        loader_hint="First target: start with Qwen/Qwen3-32B on Blackwell and keep the adapter dense, explicit, and framework-light.",
         dtype="bfloat16",
-        kv_layout="paged grouped-query attention",
-        required_kernels=("rmsnorm", "rope", "paged-attention", "gated-mlp", "sampler"),
+        kv_layout="paged grouped-query attention (64 Q heads / 8 KV heads, head_dim 128)",
+        required_kernels=(
+            "rmsnorm",
+            "rope",
+            "gqa-paged-attention-prefill",
+            "gqa-paged-attention-decode",
+            "silu-gated-mlp",
+            "sampler",
+        ),
         bring_up_sequence=(
             "load tokenizer and config",
-            "verify dense transformer block layout",
+            "verify Qwen3-32B block layout",
             "bring up one block forward path",
             "bring up prefill",
             "bring up decode with KV reuse",
@@ -21,6 +28,7 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         notes=(
             "Prefer ModelScope or relay-based download if Hugging Face is unreachable from the remote host.",
             "Keep Qwen as the first adapter until the runtime spine is stable.",
+            "Treat vLLM, SGLang, and llama.cpp as external baselines, not implementation dependencies.",
         ),
     ),
     "glm": ModelSpec(
