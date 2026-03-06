@@ -1,0 +1,13 @@
+.DS_Store
+*.egg-info/
+*.pyc
+*.pyo
+*.swp
+__pycache__/
+.coverage
+.pycache/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+artifacts/
