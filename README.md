@@ -1,6 +1,6 @@
-# tilepilot
+# leanstack
 
-`tilepilot` is a clean-slate, TileIR-first LLM inference stack.
+`leanstack` is a clean-slate, TileIR-first LLM inference stack.
 
 The name is intentional:
 
@@ -33,16 +33,16 @@ Stage 0 in this repo does three concrete things:
 - `experiments/cutile/vector_add.py`: known-good cuTile smoke kernel.
 - `experiments/models/hf_glm_smoke.py`: baseline Hugging Face GLM smoke path.
 - `scripts/remote_*.sh`: remote bootstrap, sync, probe, install, and smoke scripts.
-- `src/tilepilot/`: Python control plane, planning, and repo utilities.
-- `skills/tilepilot-stack/`: English Codex skill for operating the stack.
+- `src/leanstack/`: Python control plane, planning, and repo utilities.
+- `skills/leanstack/`: English Codex skill for operating the stack.
 
 ## Quick start
 
-From `/Users/wei/work/spark/tilepilot`:
+From `/Users/wei/work/spark/leanstack`:
 
 ```bash
-PYTHONPATH=src python3 -m tilepilot.cli show-plan
-PYTHONPATH=src python3 -m tilepilot.cli remote-env
+PYTHONPATH=src python3 -m leanstack.cli show-plan
+PYTHONPATH=src python3 -m leanstack.cli remote-env
 ./scripts/remote_bootstrap.sh
 ./scripts/remote_sync.sh
 ./scripts/remote_verify.sh

@@ -1,11 +1,11 @@
 ---
-name: tilepilot-stack
-description: Operate and extend the tilepilot repository, a clean-slate TileIR-first LLM inference stack. Use this skill when Codex needs to plan the stack, add or validate cuTile kernels, sync code to the DGX Spark machine through ../remote.sh, collect remote artifacts, prepare a GLM-family adapter, or tighten the runtime without falling back to legacy vLLM-style architecture.
+name: leanstack
+description: Operate and extend the leanstack repository, a clean-slate TileIR-first LLM inference stack built to simplify and compress the serving software stack. Use this skill when Codex needs to plan the stack, add or validate cuTile kernels, sync code to the DGX Spark machine through ../remote.sh, collect remote artifacts, prepare a GLM-family adapter, or tighten the runtime without falling back to legacy vLLM-style architecture.
 ---
 
-# Tilepilot Stack
+# Leanstack
 
-Use this skill when working in `/Users/wei/work/spark/tilepilot`.
+Use this skill when working in `/Users/wei/work/spark/leanstack`.
 
 ## Principles
 
@@ -64,9 +64,9 @@ Use this skill when working in `/Users/wei/work/spark/tilepilot`.
 ## Useful commands
 
 ```bash
-PYTHONPATH=src python3 -m tilepilot.cli show-plan
-PYTHONPATH=src python3 -m tilepilot.cli remote-env
-PYTHONPATH=src python3 -m tilepilot.cli show-blueprint --model glm
+PYTHONPATH=src python3 -m leanstack.cli show-plan
+PYTHONPATH=src python3 -m leanstack.cli remote-env
+PYTHONPATH=src python3 -m leanstack.cli show-blueprint --model glm
 ./scripts/remote_bootstrap.sh
 ./scripts/remote_sync.sh
 ./scripts/remote_verify.sh

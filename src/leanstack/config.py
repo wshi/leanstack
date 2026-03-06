@@ -7,8 +7,9 @@ from dataclasses import dataclass, field
 class RemoteEndpoint:
     user_host: str
     port: int
-    workspace: str = "/home/pto/tilepilot"
+    workspace: str = "/home/pto/leanstack"
     cutile_env: str = "/home/pto/venv-cutile"
+    ssh_command: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -21,4 +22,3 @@ class ModelSpec:
     required_kernels: tuple[str, ...]
     bring_up_sequence: tuple[str, ...] = field(default_factory=tuple)
     notes: tuple[str, ...] = field(default_factory=tuple)
-

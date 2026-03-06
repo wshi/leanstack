@@ -6,7 +6,7 @@ Date: 2026-03-06
 
 Deliverables:
 
-- fixed remote workspace under `/home/pto/tilepilot`
+- fixed remote workspace under `/home/pto/leanstack`
 - repeatable sync and validation scripts
 - environment probe for CUDA, cuTile, Python, and model-runtime dependencies
 

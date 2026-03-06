@@ -4,7 +4,7 @@ set -o pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REMOTE_SCRIPT="${REMOTE_SCRIPT:-$ROOT/../remote.sh}"
-REMOTE_HOME="${REMOTE_HOME:-/home/pto/tilepilot}"
+REMOTE_HOME="${REMOTE_HOME:-/home/pto/leanstack}"
 REMOTE_REPO="$REMOTE_HOME/repo"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 source "$ROOT/scripts/remote_helpers.sh"

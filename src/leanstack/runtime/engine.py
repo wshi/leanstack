@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from tilepilot.config import ModelSpec
+from leanstack.config import ModelSpec
 
 
 @dataclass(frozen=True)
@@ -51,4 +51,3 @@ def build_runtime_blueprint(model: ModelSpec) -> RuntimeBlueprint:
             ),
         ),
     )
-

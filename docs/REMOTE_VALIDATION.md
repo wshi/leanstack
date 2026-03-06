@@ -6,11 +6,11 @@ The DGX Spark machine is accessed through `../remote.sh` and treated as the syst
 
 The scripts in this repo create and use:
 
-- `/home/pto/tilepilot/repo`
-- `/home/pto/tilepilot/artifacts`
-- `/home/pto/tilepilot/logs`
-- `/home/pto/tilepilot/models`
-- `/home/pto/tilepilot/tmp`
+- `/home/pto/leanstack/repo`
+- `/home/pto/leanstack/artifacts`
+- `/home/pto/leanstack/logs`
+- `/home/pto/leanstack/models`
+- `/home/pto/leanstack/tmp`
 
 ## Validation loop
 
@@ -34,7 +34,7 @@ The smoke script does all of the following on the remote host:
 
 Each validation run writes a timestamped artifact directory:
 
-`/home/pto/tilepilot/artifacts/<UTC timestamp>`
+`/home/pto/leanstack/artifacts/<UTC timestamp>`
 
 The expected structure is:
 
@@ -45,4 +45,3 @@ The expected structure is:
 - `logs/`
 
 No generated artifact should be committed back into the repo.
-

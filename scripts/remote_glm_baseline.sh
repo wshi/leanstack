@@ -14,8 +14,7 @@ load_remote_cmd "$REMOTE_SCRIPT"
 
 COMMAND="set -euo pipefail; \
 source /home/pto/venv-cutile/bin/activate; \
-export PYTHONPATH=/home/pto/tilepilot/repo/src; \
-python3 /home/pto/tilepilot/repo/experiments/models/hf_glm_smoke.py --model-id \"$MODEL_ID\" --prompt \"$PROMPT\" --max-new-tokens \"$MAX_NEW_TOKENS\""
+export PYTHONPATH=/home/pto/leanstack/repo/src; \
+python3 /home/pto/leanstack/repo/experiments/models/hf_glm_smoke.py --model-id \"$MODEL_ID\" --prompt \"$PROMPT\" --max-new-tokens \"$MAX_NEW_TOKENS\""
 
 run_remote_script "$COMMAND"
-

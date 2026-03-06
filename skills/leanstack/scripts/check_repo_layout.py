@@ -21,10 +21,9 @@ def main() -> int:
         for path in missing:
             print(f"missing: {path}")
         return 1
-    print("tilepilot repo layout is present")
+    print("leanstack repo layout is present")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This reference describes the expected remote loop for `tilepilot`.
+This reference describes the expected remote loop for `leanstack`.
 
 ## Entry point
 
@@ -17,10 +17,10 @@ The shared entry point is `../remote.sh`, which currently resolves to the DGX Sp
 
 ## Expected remote locations
 
-- `/home/pto/tilepilot/repo`
-- `/home/pto/tilepilot/artifacts`
-- `/home/pto/tilepilot/logs`
-- `/home/pto/tilepilot/models`
+- `/home/pto/leanstack/repo`
+- `/home/pto/leanstack/artifacts`
+- `/home/pto/leanstack/logs`
+- `/home/pto/leanstack/models`
 
 ## Validation expectations
 
@@ -37,4 +37,3 @@ Before attempting a GLM-family run:
 2. verify the target checkpoint from primary sources
 3. install model-runtime dependencies if needed
 4. confirm kernel coverage gaps explicitly
-

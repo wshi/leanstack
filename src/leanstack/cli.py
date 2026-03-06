@@ -11,7 +11,7 @@ from .runtime.engine import build_runtime_blueprint
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="tilepilot")
+    parser = argparse.ArgumentParser(prog="leanstack")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("show-plan", help="Print the phased execution plan.")
@@ -117,4 +117,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

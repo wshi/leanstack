@@ -33,16 +33,18 @@ def parse_remote_script(path: Path) -> RemoteEndpoint:
     if not user_host:
         raise ValueError(f"could not find remote host in: {raw}")
 
-    return RemoteEndpoint(user_host=user_host, port=port)
+    return RemoteEndpoint(user_host=user_host, port=port, ssh_command=tuple(tokens))
 
 
 def ssh_prefix(endpoint: RemoteEndpoint) -> list[str]:
-    return ["ssh", "-p", str(endpoint.port), endpoint.user_host]
+    if endpoint.ssh_command:
+        return list(endpoint.ssh_command)
+    return ["ssh", endpoint.user_host, "-p", str(endpoint.port)]
 
 
 def run_remote_bash(endpoint: RemoteEndpoint, script: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ssh_prefix(endpoint) + ["bash", "-lc", script],
+        ssh_prefix(endpoint) + [f"bash -lc {shlex.quote(script)}"],
         check=True,
         capture_output=True,
         text=True,
@@ -52,4 +54,3 @@ def run_remote_bash(endpoint: RemoteEndpoint, script: str) -> subprocess.Complet
 def default_remote_script() -> Path:
     repo_root = Path(__file__).resolve().parents[2]
     return repo_root.parent / "remote.sh"
-
