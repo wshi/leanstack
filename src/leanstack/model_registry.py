@@ -7,7 +7,7 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
     "qwen": ModelSpec(
         key="qwen",
         family="Qwen-family",
-        loader_hint="First target: start with Qwen/Qwen3-32B on Blackwell and keep the adapter dense, explicit, and framework-light.",
+        loader_hint="First target: start with Qwen/Qwen3-32B on Blackwell and keep the adapter dense, explicit, framework-light, and specialized to the model-chip pair.",
         dtype="bfloat16",
         kv_layout="paged grouped-query attention (64 Q heads / 8 KV heads, head_dim 128)",
         required_kernels=(
@@ -29,6 +29,7 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
             "Prefer ModelScope or relay-based download if Hugging Face is unreachable from the remote host.",
             "Keep Qwen as the first adapter until the runtime spine is stable.",
             "Treat vLLM, SGLang, and llama.cpp as external baselines, not implementation dependencies.",
+            "Treat broad compatibility as a deferred cost unless it is required by the first model-chip contract.",
         ),
     ),
     "glm": ModelSpec(

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a narrow, auditable inference stack for `Qwen/Qwen3-32B` on Blackwell that is centered on three moving parts:
+Build a narrow, auditable inference stack for `Qwen/Qwen3-32B` on Blackwell that is centered on three moving parts and explicitly avoids paying broad compatibility costs up front:
 
 1. `compiler`: lowers model-level ops to cuTile and TileIR-backed kernels.
 2. `runtime`: owns request batching, KV cache placement, and kernel dispatch.
@@ -12,6 +12,7 @@ Build a narrow, auditable inference stack for `Qwen/Qwen3-32B` on Blackwell that
 
 - Reproducing vLLM surface area in the first phase.
 - Supporting every model family at once before `Qwen/Qwen3-32B` is stable.
+- Supporting every hardware backend behind one generic abstraction.
 - Hiding compiler behavior behind framework magic.
 - Embedding `vLLM`, `SGLang`, `llama.cpp`, or another inference runtime inside the core serving path.
 
@@ -36,6 +37,14 @@ The runtime should only do five things:
 5. token sampling
 
 Everything else belongs in adapters, tooling, or offline compilation.
+
+### 2a. Compatibility tax is a first-class architectural concern
+
+Whenever a new layer, interface, or fallback path is proposed, the default question is:
+
+`Is this required for the Qwen3-32B + Blackwell contract, or is it a compatibility tax?`
+
+If it is only a compatibility tax, it should be deferred.
 
 ### 3. Model support is adapter-driven
 
@@ -71,6 +80,17 @@ The initial adapter and runtime should be shaped around the first verified targe
 
 This is a deliberate optimization target, not a generic abstraction accident.
 
+### 5a. Agent regeneration is part of the design
+
+The stack should be small enough that an agent can reasonably:
+
+- rewrite a kernel
+- adjust an adapter
+- change a scheduler rule
+- regenerate benchmark glue
+
+without having to understand a sprawling, compatibility-first codebase.
+
 ### 6. Remote validation is mandatory
 
 The DGX Spark machine is the truth source for kernel bring-up. Local development defines structure; remote runs decide whether the stack is real.
@@ -105,7 +125,7 @@ The repo intentionally starts with a narrow vertical slice:
 2. remote artifact capture
 3. adapter contract for `Qwen/Qwen3-32B`
 4. minimal runtime that can execute one prefill and one decode loop
-5. benchmark comparison against framework baselines
+5. benchmark comparison against framework baselines and their compatibility-heavy process shape
 6. API layer only after the execution path is stable
 
 This keeps the stack understandable while still targeting a full model run.

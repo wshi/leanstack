@@ -9,22 +9,24 @@ The name is intentional:
 
 ## Why this repo exists
 
-The current serving ecosystem is too layered, too stateful, and too hard to reason about. This repo starts over with five constraints:
+The current serving ecosystem pays a large compatibility tax: too many layers, too much genericity, and too much hidden state for workloads that ultimately run one concrete model on one concrete machine.
+
+This repo explores a different path with five constraints:
 
 1. The execution path must stay explicit down to `cuTile -> TileIR -> cubin -> SASS`.
-2. The runtime must stay small enough to audit and regenerate.
-3. The first model contract is `Qwen/Qwen3-32B`, not "all models."
-4. `vLLM`, `SGLang`, `llama.cpp`, and similar systems are benchmark baselines, not runtime dependencies.
+2. The runtime must stay small enough that an agent can regenerate and modify it cheaply.
+3. The first contract is a model-chip pair, `Qwen/Qwen3-32B` on Blackwell, not "all models on all hardware."
+4. `vLLM`, `SGLang`, `llama.cpp`, and similar systems are compatibility-heavy baselines to compare against, not runtime dependencies.
 5. Remote validation on the DGX Spark machine is part of the development loop, not an afterthought.
 
 ## Scope
 
 Stage 0 in this repo does four concrete things:
 
-1. Defines the project thesis for a compact, agent-built LLM stack.
+1. Defines the project thesis for an agent-built, model-chip-specific LLM stack.
 2. Provides local and remote tooling to validate the cuTile -> TileIR -> cubin -> SASS path.
 3. Establishes the bring-up plan for a `Qwen/Qwen3-32B` adapter on a Blackwell-class remote machine.
-4. Defines the benchmark contract against `vLLM`, `SGLang`, and a secondary `llama.cpp` reference path.
+4. Defines the benchmark contract against `vLLM`, `SGLang`, and a secondary `llama.cpp` reference path, including both runtime efficiency and software-stack complexity.
 
 ## Repository layout
 
@@ -88,5 +90,7 @@ As of 2026-03-06, the first milestone is a compiler-grounded vertical slice:
 - ModelScope-based `Qwen/Qwen3-32B` fetch path validated on the remote machine
 
 The next hard gate is a `Qwen/Qwen3-32B` adapter that can run end to end on the remote Blackwell machine and then be benchmarked against framework baselines.
+
+The deeper hypothesis is that, once compatibility is treated as optional instead of mandatory, an agent can spend a bounded token budget to generate a more direct and efficient software path for a specific model-chip pair.
 
 GLM remains a second-family target, but it is no longer the first bring-up path.

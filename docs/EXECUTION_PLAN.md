@@ -9,6 +9,7 @@ Deliverables:
 - fixed remote workspace under `/home/pto/lean`
 - repeatable sync and validation scripts
 - environment probe for CUDA, cuTile, Python, and model-runtime dependencies
+- initial statement of the compatibility costs being intentionally deferred
 
 Exit gate:
 
@@ -36,6 +37,7 @@ Deliverables:
 - request queue
 - prefill/decode scheduler
 - execution graph with explicit kernel dispatch
+- explicit record of which generic framework features are being deferred as compatibility tax
 
 Exit gate:
 
@@ -67,7 +69,7 @@ Deliverables:
 - benchmark harness for `generated tokens/s`, latency, and memory
 - official-baseline configs for `vLLM` and `SGLang`
 - secondary deployment reference for `llama.cpp`
-- comparative report that records process shape and operational complexity
+- comparative report that records process shape, operational complexity, and compatibility tax
 
 Exit gate:
 
@@ -91,4 +93,4 @@ Exit gate:
 1. Finish the full `Qwen/Qwen3-32B` checkpoint fetch on the remote machine and validate the first BF16 baseline run.
 2. Translate the first transformer block into explicit kernel requirements instead of importing a monolithic runtime.
 3. Prepare official baseline configurations for `vLLM` and `SGLang` on the same machine and model profile.
-4. Define the first benchmark table format before adding a larger serve surface.
+4. Define the first benchmark table format, including software-complexity and agent-cost proxies, before adding a larger serve surface.

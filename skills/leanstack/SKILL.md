@@ -13,6 +13,7 @@ Use this skill when working in `/Users/wei/work/spark/leanstack`.
 2. Prefer explicit adapters over model-specific runtime branches.
 3. Treat the DGX Spark machine as the truth source for kernel validation.
 4. Keep repo-facing docs and implementation notes in English.
+5. Treat broad compatibility as a deferred cost unless the current task truly requires it.
 
 ## First files to read
 
@@ -33,7 +34,8 @@ Use this skill when working in `/Users/wei/work/spark/leanstack`.
 
 1. Confirm whether the task touches compiler, runtime, serve, or model-adapter boundaries.
 2. Extend the smallest layer that solves the task.
-3. Update `docs/EXECUTION_PLAN.md` when a phase gate or blocker changes.
+3. Prefer model-chip-specific changes over general framework-style abstractions.
+4. Update `docs/EXECUTION_PLAN.md` when a phase gate or blocker changes.
 
 ### Kernel bring-up
 
@@ -60,6 +62,7 @@ Use this skill when working in `/Users/wei/work/spark/leanstack`.
 3. Translate the model into explicit kernel requirements before importing framework code.
 4. Keep adapter rules in code or docs, never as hidden assumptions.
 5. Treat non-thinking mode as the default throughput benchmark path unless the task explicitly studies reasoning mode.
+6. Make compatibility costs explicit when proposing any broader abstraction or fallback.
 
 ## Guardrails
 
@@ -68,6 +71,7 @@ Use this skill when working in `/Users/wei/work/spark/leanstack`.
 - Do not silently switch the primary model family without explicit user confirmation.
 - Do not hide missing kernel coverage behind a framework fallback.
 - Do not introduce `vLLM`, `SGLang`, `llama.cpp`, or similar frameworks as runtime dependencies; they are baselines only.
+- Do not add generalized compatibility layers without stating why the first model-chip contract needs them.
 
 ## Useful commands
 

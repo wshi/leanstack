@@ -11,7 +11,28 @@ The project thesis is narrower and harder:
 - use a `cuTile -> TileIR -> cubin -> SASS` execution path as the core of the stack
 - target one concrete model first: `Qwen/Qwen3-32B`
 - target one concrete hardware class first: Blackwell, currently the remote GB10 / DGX Spark machine
+- treat compatibility-driven software complexity as a tax, not a requirement
 - measure whether an agent-built, hardware-near stack can stay materially simpler than the current framework-heavy ecosystem while remaining performance-competitive
+
+## Central hypothesis
+
+The dominant LLM serving stacks are expensive partly because they try to preserve broad compatibility:
+
+- many model families
+- many hardware targets
+- many deployment modes
+- many fallback paths
+
+That compatibility is valuable, but it also creates a large software tax.
+
+`leanstack` explores the opposite bet:
+
+- narrow the target to a model-chip pair
+- let an agent synthesize and regenerate the missing software
+- spend tokens instead of carrying a permanently generalized runtime
+- recover efficiency, inspectability, and customization from that narrower scope
+
+The project is therefore not only a performance effort. It is an economic and architectural experiment about when agent cost is lower than compatibility cost.
 
 ## Hard constraints
 
@@ -20,6 +41,16 @@ The project thesis is narrower and harder:
 The serving path must not depend on `vLLM`, `SGLang`, `llama.cpp`, `TensorRT-LLM`, or another inference runtime.
 
 Those projects are comparison points and reference material only.
+
+### 1a. Compatibility is opt-in, not default
+
+The project does not begin by asking how to support the widest surface area.
+
+It begins by asking how small the stack can become if:
+
+- the hardware target is fixed
+- the model target is fixed
+- the agent can rewrite code quickly
 
 ### 2. Qwen3-32B is the first contract
 
@@ -51,6 +82,18 @@ The goal is not only to produce a fast stack.
 
 The goal is to show that an agent-guided workflow can build and maintain a smaller, more hardware-native stack than the current accumulation of framework layers, helper daemons, adapters, compatibility shims, and opaque optimization passes.
 
+### 5. Token budget is an explicit engineering resource
+
+In this repo, token spend is treated as a real engineering input:
+
+- prompt tokens
+- response tokens
+- iteration count
+
+The intended outcome is not "zero software cost."
+
+The intended outcome is that a bounded agent token budget can replace a large amount of compatibility-oriented software and manual framework plumbing.
+
 ## What success looks like
 
 ### Technical success
@@ -63,9 +106,9 @@ The goal is to show that an agent-guided workflow can build and maintain a small
 
 - `leanstack` is benchmarked against `vLLM` and `SGLang` on the same machine and model profile
 - `llama.cpp` is tracked as a secondary deployment reference when the weight format is not apples-to-apples
-- the result table includes `generated tokens/s`, latency, memory use, process shape, and operational complexity
+- the result table includes `generated tokens/s`, latency, memory use, process shape, operational complexity, and software-stack size proxies
 
 ### Research success
 
 - the repo documents whether an agent-driven, hardware-near stack can simplify the modern LLM software path without surrendering practical performance
-- if the answer is negative on a given workload, the repo states which missing kernels, scheduling rules, or compiler gaps caused the miss
+- if the answer is negative on a given workload, the repo states which missing kernels, scheduling rules, compiler gaps, or compatibility requirements caused the miss
