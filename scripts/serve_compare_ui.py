@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import threading
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -17,6 +18,7 @@ from leanstack.compare_runner import build_comparison_payload, check_remote_stat
 
 
 WEB_ROOT = REPO_ROOT / "web" / "compare-ui"
+OPERATION_LOCK = threading.Lock()
 
 
 class CompareHandler(SimpleHTTPRequestHandler):
@@ -66,13 +68,27 @@ class CompareHandler(SimpleHTTPRequestHandler):
             self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def _handle_start_vllm(self) -> None:
+        if not OPERATION_LOCK.acquire(blocking=False):
+            self._send_json(
+                {"ok": False, "error": "another compare operation is already running"},
+                status=HTTPStatus.CONFLICT,
+            )
+            return
         try:
             payload = ensure_vllm_ready()
             self._send_json({"ok": True, "result": payload})
         except Exception as exc:  # pragma: no cover - best-effort UI helper
             self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        finally:
+            OPERATION_LOCK.release()
 
     def _handle_compare(self) -> None:
+        if not OPERATION_LOCK.acquire(blocking=False):
+            self._send_json(
+                {"ok": False, "error": "another compare operation is already running"},
+                status=HTTPStatus.CONFLICT,
+            )
+            return
         try:
             body = self._read_json_body()
             prompt = str(body.get("prompt") or "").strip()
@@ -92,6 +108,8 @@ class CompareHandler(SimpleHTTPRequestHandler):
             self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
         except Exception as exc:  # pragma: no cover - best-effort UI helper
             self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        finally:
+            OPERATION_LOCK.release()
 
 
 def parse_args() -> argparse.Namespace:

@@ -9,17 +9,18 @@ import torch
 from transformers import AutoTokenizer
 
 from leanstack.runtime.qwen_explicit import (
+    build_qwen_position_cache,
     materialize_qwen_full_runtime,
     materialize_qwen_full_semantic_runtime,
     materialize_qwen_stack_runtime,
     materialize_qwen_semantic_stack_runtime,
     normalize_stop_token_ids,
     project_hidden_to_logits,
-    project_semantic_hidden_to_logits,
     run_semantic_stack_decode,
     run_semantic_stack_prefill,
     run_stack_decode,
     run_stack_prefill,
+    select_semantic_greedy_token,
     select_greedy_token,
 )
 
@@ -37,6 +38,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-prefill-tokens", type=int, default=16)
     parser.add_argument("--max-new-tokens", type=int, default=8)
     parser.add_argument("--page-size", type=int, default=16)
+    parser.add_argument("--resident-requests", type=int, default=1)
+    parser.add_argument("--warmup-requests", type=int, default=0)
+    parser.add_argument("--capture-decode-step-timings", action="store_true")
     parser.add_argument("--stop-token-id", action="append", type=int, default=None)
     parser.add_argument("--ignore-eos", action="store_true")
     parser.add_argument("--skip-final-cache-advance", action="store_true")
@@ -102,12 +106,225 @@ def resolve_stop_token_ids(tokenizer, args: argparse.Namespace) -> tuple[int, ..
     return tuple(sorted(stop_ids))
 
 
+def materialize_runtime(args: argparse.Namespace):
+    if args.runtime_mode == "semantic":
+        if args.num_layers == 0:
+            return materialize_qwen_full_semantic_runtime(
+                model_path=args.model_path,
+                device=args.device,
+                dtype=args.dtype,
+                include_output_head=True,
+            )
+        return materialize_qwen_semantic_stack_runtime(
+            model_path=args.model_path,
+            layer_indices=tuple(range(args.num_layers)),
+            device=args.device,
+            dtype=args.dtype,
+            include_output_head=True,
+        )
+
+    if args.num_layers == 0:
+        return materialize_qwen_full_runtime(
+            model_path=args.model_path,
+            device=args.device,
+            dtype=args.dtype,
+            include_output_head=True,
+        )
+    return materialize_qwen_stack_runtime(
+        model_path=args.model_path,
+        layer_indices=tuple(range(args.num_layers)),
+        device=args.device,
+        dtype=args.dtype,
+        include_output_head=True,
+    )
+
+
+def run_request(
+    *,
+    runtime,
+    tokenizer,
+    input_ids: torch.LongTensor,
+    device: torch.device,
+    runtime_mode: str,
+    page_size: int,
+    max_new_tokens: int,
+    skip_final_cache_advance: bool,
+    stop_token_ids: tuple[int, ...],
+    capture_decode_step_timings: bool,
+) -> dict:
+    generated_gpu = torch.empty((max_new_tokens,), device=device, dtype=torch.long)
+    decode_step_seconds: list[float] = []
+    stop_reason = "max_new_tokens"
+    timings: dict[str, float | list[float]] = {}
+    position_cache = None
+    stop_token_tensor = None
+    if runtime_mode == "semantic":
+        position_cache = build_qwen_position_cache(
+            runtime.rope_inv_freq,
+            runtime.attention_scaling,
+            max_seq_len=int(input_ids.shape[-1]) + max_new_tokens,
+            dtype=runtime.dtype,
+        )
+    if stop_token_ids:
+        stop_token_tensor = torch.tensor(stop_token_ids, device=device, dtype=torch.long)
+    emitted_tokens = 0
+
+    with torch.inference_mode():
+        sync_device(device)
+        start = time.perf_counter()
+        if runtime_mode == "semantic":
+            prefill_hidden, cache = run_semantic_stack_prefill(
+                runtime,
+                input_ids,
+                page_size=page_size,
+                max_seq_len=int(input_ids.shape[-1]) + max_new_tokens,
+                position_cache=position_cache,
+            )
+            next_token = select_semantic_greedy_token(runtime, prefill_hidden)
+        else:
+            prefill_hidden, cache = run_stack_prefill(runtime, input_ids)
+            next_logits = project_hidden_to_logits(runtime, prefill_hidden)
+            next_token = select_greedy_token(next_logits)
+        sync_device(device)
+        timings["prefill_seconds"] = time.perf_counter() - start
+
+        if capture_decode_step_timings and device.type == "cuda":
+            loop_start_event = torch.cuda.Event(enable_timing=True)
+            loop_end_event = torch.cuda.Event(enable_timing=True)
+            loop_start_event.record()
+            step_events: list[tuple[torch.cuda.Event, torch.cuda.Event]] = []
+        else:
+            sync_device(device)
+            loop_start = time.perf_counter()
+        for step in range(max_new_tokens):
+            generated_gpu[step] = next_token.reshape(())
+            emitted_tokens = step + 1
+            should_stop = False
+
+            if stop_token_tensor is not None:
+                stop_hit = torch.eq(next_token.reshape(1), stop_token_tensor).any()
+                if bool(stop_hit.item()):
+                    stop_reason = "stop_token"
+                    should_stop = True
+
+            if step == max_new_tokens - 1:
+                should_stop = True
+
+            if should_stop:
+                break
+
+            if capture_decode_step_timings and device.type == "cuda":
+                step_start_event = torch.cuda.Event(enable_timing=True)
+                step_end_event = torch.cuda.Event(enable_timing=True)
+                step_start_event.record()
+            if runtime_mode == "semantic":
+                decode_hidden, cache = run_semantic_stack_decode(
+                    runtime,
+                    next_token,
+                    cache,
+                    position_cache=position_cache,
+                )
+                next_token = select_semantic_greedy_token(runtime, decode_hidden)
+            else:
+                decode_hidden, cache = run_stack_decode(runtime, next_token, cache)
+                next_logits = project_hidden_to_logits(runtime, decode_hidden)
+                next_token = select_greedy_token(next_logits)
+            if capture_decode_step_timings and device.type == "cuda":
+                step_end_event.record()
+                step_events.append((step_start_event, step_end_event))
+
+        if capture_decode_step_timings and device.type == "cuda":
+            loop_end_event.record()
+            sync_device(device)
+            timings["decode_loop_seconds"] = float(loop_start_event.elapsed_time(loop_end_event)) / 1000.0
+            decode_step_seconds = [
+                float(start_event.elapsed_time(end_event)) / 1000.0 for start_event, end_event in step_events
+            ]
+        else:
+            sync_device(device)
+            timings["decode_loop_seconds"] = time.perf_counter() - loop_start
+
+        timings["final_cache_advance_seconds"] = 0.0
+        final_cache_advanced = False
+        if emitted_tokens > 0 and not skip_final_cache_advance:
+            final_token = generated_gpu[emitted_tokens - 1].view(1, 1)
+            sync_device(device)
+            start = time.perf_counter()
+            if runtime_mode == "semantic":
+                _, cache = run_semantic_stack_decode(runtime, final_token, cache, position_cache=position_cache)
+            else:
+                _, cache = run_stack_decode(runtime, final_token, cache)
+            sync_device(device)
+            timings["final_cache_advance_seconds"] = time.perf_counter() - start
+            final_cache_advanced = True
+
+    generated_tensor = generated_gpu[:emitted_tokens].unsqueeze(0).to("cpu")
+    runtime_loop_seconds = float(timings["prefill_seconds"]) + float(timings["decode_loop_seconds"])
+    full_loop_seconds = runtime_loop_seconds + float(timings["final_cache_advance_seconds"])
+    generated_ids = generated_tensor[0].tolist()
+    return {
+        "generated_token_ids": generated_ids,
+        "generated_text": tokenizer.decode(generated_tensor[0], skip_special_tokens=True),
+        "cache_seq_length": int(cache.get_seq_length()),
+        "cache_summary": cache.summary() if runtime_mode == "semantic" else None,
+        "final_cache_advanced": final_cache_advanced,
+        "decode_steps_executed": len(decode_step_seconds),
+        "stop_reason": stop_reason,
+        "emitted_tokens": emitted_tokens,
+        "timings": {
+            **timings,
+            "runtime_loop_seconds": runtime_loop_seconds,
+            "full_loop_seconds": full_loop_seconds,
+            "decode_step_seconds": decode_step_seconds,
+        },
+        "throughput": {
+            "runtime_tokens_per_second": (emitted_tokens / runtime_loop_seconds) if runtime_loop_seconds > 0 else None,
+            "full_loop_tokens_per_second": (emitted_tokens / full_loop_seconds) if full_loop_seconds > 0 else None,
+        },
+    }
+
+
+def average_request_metrics(requests: list[dict]) -> dict:
+    if not requests:
+        raise ValueError("expected at least one measured request")
+
+    def average(values: list[float | None]) -> float | None:
+        concrete = [float(value) for value in values if value is not None]
+        if not concrete:
+            return None
+        return sum(concrete) / len(concrete)
+
+    avg_timings = {
+        "prefill_seconds": average([request["timings"]["prefill_seconds"] for request in requests]),
+        "decode_loop_seconds": average([request["timings"]["decode_loop_seconds"] for request in requests]),
+        "final_cache_advance_seconds": average([request["timings"]["final_cache_advance_seconds"] for request in requests]),
+        "runtime_loop_seconds": average([request["timings"]["runtime_loop_seconds"] for request in requests]),
+        "full_loop_seconds": average([request["timings"]["full_loop_seconds"] for request in requests]),
+        "decode_step_seconds": requests[-1]["timings"]["decode_step_seconds"],
+    }
+    avg_throughput = {
+        "runtime_tokens_per_second": average(
+            [request["throughput"]["runtime_tokens_per_second"] for request in requests]
+        ),
+        "full_loop_tokens_per_second": average([request["throughput"]["full_loop_tokens_per_second"] for request in requests]),
+    }
+    return {
+        "timings": avg_timings,
+        "throughput": avg_throughput,
+        "emitted_tokens": average([request["emitted_tokens"] for request in requests]),
+    }
+
+
 def main() -> int:
     args = parse_args()
     if args.max_new_tokens < 0:
         raise ValueError("--max-new-tokens must be non-negative")
     if args.num_layers < 0:
         raise ValueError("--num-layers must be non-negative")
+    if args.resident_requests <= 0:
+        raise ValueError("--resident-requests must be positive")
+    if args.warmup_requests < 0:
+        raise ValueError("--warmup-requests must be non-negative")
 
     device = torch.device(args.device)
     if device.type == "cuda":
@@ -125,109 +342,34 @@ def main() -> int:
 
     sync_device(device)
     start = time.perf_counter()
-    if args.runtime_mode == "semantic":
-        if args.num_layers == 0:
-            runtime = materialize_qwen_full_semantic_runtime(
-                model_path=args.model_path,
-                device=args.device,
-                dtype=args.dtype,
-                include_output_head=True,
-            )
-        else:
-            runtime = materialize_qwen_semantic_stack_runtime(
-                model_path=args.model_path,
-                layer_indices=tuple(range(args.num_layers)),
-                device=args.device,
-                dtype=args.dtype,
-                include_output_head=True,
-            )
-    else:
-        if args.num_layers == 0:
-            runtime = materialize_qwen_full_runtime(
-                model_path=args.model_path,
-                device=args.device,
-                dtype=args.dtype,
-                include_output_head=True,
-            )
-        else:
-            runtime = materialize_qwen_stack_runtime(
-                model_path=args.model_path,
-                layer_indices=tuple(range(args.num_layers)),
-                device=args.device,
-                dtype=args.dtype,
-                include_output_head=True,
-            )
+    runtime = materialize_runtime(args)
     sync_device(device)
     timings["materialize_seconds"] = time.perf_counter() - start
     memory["after_materialize"] = snapshot_cuda_memory(device)
 
-    generated_ids: list[int] = []
-    decode_step_seconds: list[float] = []
-    stop_reason = "max_new_tokens"
-
-    with torch.inference_mode():
-        sync_device(device)
-        start = time.perf_counter()
-        if args.runtime_mode == "semantic":
-            prefill_hidden, cache = run_semantic_stack_prefill(
-                runtime,
-                input_ids,
-                page_size=args.page_size,
-                max_seq_len=int(input_ids.shape[-1]) + args.max_new_tokens,
-            )
-            next_logits = project_semantic_hidden_to_logits(runtime, prefill_hidden)
+    warmup_results: list[dict] = []
+    measured_results: list[dict] = []
+    total_requests = args.warmup_requests + args.resident_requests
+    for request_idx in range(total_requests):
+        request_result = run_request(
+            runtime=runtime,
+            tokenizer=tokenizer,
+            input_ids=input_ids.to(device),
+            device=device,
+            runtime_mode=args.runtime_mode,
+            page_size=args.page_size,
+            max_new_tokens=args.max_new_tokens,
+            skip_final_cache_advance=args.skip_final_cache_advance,
+            stop_token_ids=stop_token_ids,
+            capture_decode_step_timings=args.capture_decode_step_timings,
+        )
+        if request_idx < args.warmup_requests:
+            warmup_results.append(request_result)
         else:
-            prefill_hidden, cache = run_stack_prefill(runtime, input_ids)
-            next_logits = project_hidden_to_logits(runtime, prefill_hidden)
-        sync_device(device)
-        timings["prefill_seconds"] = time.perf_counter() - start
+            measured_results.append(request_result)
 
-        loop_start = time.perf_counter()
-        for step in range(args.max_new_tokens):
-            next_token = select_greedy_token(next_logits)
-            token_id = int(next_token.item())
-            generated_ids.append(token_id)
-
-            if token_id in stop_token_ids:
-                stop_reason = "stop_token"
-                break
-
-            if step == args.max_new_tokens - 1:
-                break
-
-            sync_device(device)
-            step_start = time.perf_counter()
-            if args.runtime_mode == "semantic":
-                decode_hidden, cache = run_semantic_stack_decode(runtime, next_token, cache)
-                next_logits = project_semantic_hidden_to_logits(runtime, decode_hidden)
-            else:
-                decode_hidden, cache = run_stack_decode(runtime, next_token, cache)
-                next_logits = project_hidden_to_logits(runtime, decode_hidden)
-            sync_device(device)
-            decode_step_seconds.append(time.perf_counter() - step_start)
-
-        sync_device(device)
-        timings["decode_loop_seconds"] = time.perf_counter() - loop_start
-
-        timings["final_cache_advance_seconds"] = 0.0
-        final_cache_advanced = False
-        if generated_ids and not args.skip_final_cache_advance:
-            final_token = torch.tensor([[generated_ids[-1]]], device=device, dtype=torch.long)
-            sync_device(device)
-            start = time.perf_counter()
-            if args.runtime_mode == "semantic":
-                _, cache = run_semantic_stack_decode(runtime, final_token, cache)
-            else:
-                _, cache = run_stack_decode(runtime, final_token, cache)
-            sync_device(device)
-            timings["final_cache_advance_seconds"] = time.perf_counter() - start
-            final_cache_advanced = True
-
-    generated_tensor = torch.tensor([generated_ids], dtype=torch.long)
-    generated_text = tokenizer.decode(generated_tensor[0], skip_special_tokens=True)
-    runtime_loop_seconds = timings["prefill_seconds"] + timings["decode_loop_seconds"]
-    full_loop_seconds = runtime_loop_seconds + timings["final_cache_advance_seconds"]
-    emitted_tokens = len(generated_ids)
+    aggregate = average_request_metrics(measured_results)
+    last_result = measured_results[-1]
     memory["after_runtime_loop"] = snapshot_cuda_memory(device)
 
     result = {
@@ -245,24 +387,29 @@ def main() -> int:
         ),
         "prompt_tokens": int(input_ids.shape[-1]),
         "max_new_tokens": args.max_new_tokens,
-        "emitted_tokens": emitted_tokens,
-        "decode_steps_executed": len(decode_step_seconds),
-        "stop_reason": stop_reason,
+        "resident_requests": args.resident_requests,
+        "warmup_requests": args.warmup_requests,
+        "emitted_tokens": int(last_result["emitted_tokens"]),
+        "decode_steps_executed": int(last_result["decode_steps_executed"]),
+        "stop_reason": last_result["stop_reason"],
         "stop_token_ids": list(stop_token_ids),
-        "generated_token_ids": generated_ids,
-        "generated_text": generated_text,
-        "cache_seq_length": int(cache.get_seq_length()),
-        "cache_summary": cache.summary() if args.runtime_mode == "semantic" else None,
-        "final_cache_advanced": final_cache_advanced,
-        "timings": {
-            **timings,
-            "runtime_loop_seconds": runtime_loop_seconds,
-            "full_loop_seconds": full_loop_seconds,
-            "decode_step_seconds": decode_step_seconds,
-        },
-        "throughput": {
-            "runtime_tokens_per_second": (emitted_tokens / runtime_loop_seconds) if runtime_loop_seconds > 0 else None,
-            "full_loop_tokens_per_second": (emitted_tokens / full_loop_seconds) if full_loop_seconds > 0 else None,
+        "generated_token_ids": last_result["generated_token_ids"],
+        "generated_text": last_result["generated_text"],
+        "cache_seq_length": int(last_result["cache_seq_length"]),
+        "cache_summary": last_result["cache_summary"],
+        "final_cache_advanced": bool(last_result["final_cache_advanced"]),
+        "timings": {**timings, **aggregate["timings"]},
+        "throughput": aggregate["throughput"],
+        "resident_summary": {
+            "measured_requests": args.resident_requests,
+            "warmup_requests": args.warmup_requests,
+            "measured_runtime_tokens_per_second": [
+                request["throughput"]["runtime_tokens_per_second"] for request in measured_results
+            ],
+            "measured_prefill_seconds": [request["timings"]["prefill_seconds"] for request in measured_results],
+            "warmup_runtime_tokens_per_second": [
+                request["throughput"]["runtime_tokens_per_second"] for request in warmup_results
+            ],
         },
         "memory": memory,
     }

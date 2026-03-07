@@ -16,9 +16,12 @@ RESULT_DIR="${RESULT_DIR:-$REMOTE_HOME/benchmarks}"
 BENCHMARK_TAG="${BENCHMARK_TAG:-}"
 PROMPT_OVERRIDE="${PROMPT_OVERRIDE:-}"
 MAX_NEW_TOKENS_OVERRIDE="${MAX_NEW_TOKENS_OVERRIDE:-}"
+SKIP_REMOTE_SYNC="${SKIP_REMOTE_SYNC:-0}"
 source "$ROOT/scripts/remote_helpers.sh"
 
-"$ROOT/scripts/remote_sync.sh"
+if [[ "$SKIP_REMOTE_SYNC" != "1" ]]; then
+  "$ROOT/scripts/remote_sync.sh"
+fi
 load_remote_cmd "$REMOTE_SCRIPT"
 
 COMMAND="set -euo pipefail; \

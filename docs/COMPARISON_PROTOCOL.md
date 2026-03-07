@@ -147,13 +147,14 @@ Date confirmed: 2026-03-07
 
 The first exact-checkpoint whole-model data point now exists for `Qwen/Qwen3-1.7B-Base` on the remote GB10:
 
-- warmed `vLLM` on `decode_64_256`: about `46.43 generated tok/s`
-- current `leanstack` semantic full runtime on `decode_64_256`: about `29.95 runtime tok/s`
+- warmed `vLLM` on `decode_64_256`: about `46.40 generated tok/s`
+- current `leanstack` semantic full runtime on `decode_64_256`: about `44.55 runtime tok/s`
 
-So the benchmark-first conclusion is currently negative for the main steady-state decode target:
+So the benchmark-first conclusion is no longer strongly negative, but it is still incomplete for the main steady-state decode target:
 
 - the specialized stack has not yet cleared the warmed-framework throughput bar
-- it is therefore not enough to say that ownership is solved; the next work must target steady-state decode speed directly
+- the remaining throughput gap is now small enough that kernel ownership on the decisive decode path matters more than generic control-path cleanup
+- it is therefore not enough to say that ownership is solved; the next work must target the remaining decode hot spots directly
 
 The current repo still has positive intermediate evidence:
 

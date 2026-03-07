@@ -107,14 +107,20 @@ Measured whole-model results so far:
   - `ttft_seconds ≈ 18.15`
   - `generated_tokens_per_second ≈ 10.94`
 - `vLLM`, warmed request on the same loaded service, `decode_64_256`:
-  - `ttft_seconds ≈ 0.253`
-  - `generated_tokens_per_second ≈ 46.43`
-  - `end_to_end_tokens_per_second ≈ 47.67`
-- `leanstack`, full semantic runtime, `decode_64_256`:
+  - `ttft_seconds ≈ 0.233`
+  - `generated_tokens_per_second ≈ 46.40`
+  - `end_to_end_tokens_per_second ≈ 47.84`
+- `leanstack`, earlier full semantic runtime, `decode_64_256`:
   - `materialize_seconds ≈ 15.80`
   - `prefill_seconds ≈ 0.594`
   - `runtime_tokens_per_second ≈ 29.95`
   - `full_loop_tokens_per_second ≈ 29.85`
+- `leanstack`, optimized semantic runtime, `decode_64_256`:
+  - `materialize_seconds ≈ 15.90`
+  - `prefill_seconds ≈ 0.020`
+  - `decode_loop_seconds ≈ 5.73`
+  - `runtime_tokens_per_second ≈ 44.55`
+  - `full_loop_tokens_per_second ≈ 44.40`
 - `UI smoke`, `max_new_tokens=16`:
   - `vLLM generated_tokens_per_second ≈ 10.56`
   - `leanstack runtime_tokens_per_second ≈ 14.64`
@@ -123,7 +129,7 @@ Interpretation:
 
 - the active specialized runtime is now real enough to run a full 28-layer model on the target GB10
 - the current `leanstack` path already beats the cold first-request framework path and a short `16-token` UI smoke
-- the current `leanstack` path does not yet beat warmed `vLLM` on the main `decode_64_256` profile
+- the current `leanstack` path no longer trails warmed `vLLM` by a wide margin; the gap on the main `decode_64_256` profile is now about `4%`
 - the next performance work should therefore focus on steady-state decode throughput, not just correctness or cold-start ownership
 
 ## Stage 1 hot-kernel status

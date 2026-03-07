@@ -19,6 +19,8 @@ DEFAULT_PROFILE = "decode_64_256"
 DEFAULT_MODEL_NAME = "qwen3-1.7b-base"
 DEFAULT_VLLM_VENV = "/home/pto/lean/venv-vllm-cu128"
 DEFAULT_PYTHON_DEV_ROOT = "/home/pto/lean/tmp/pydev_probe/extracted"
+DEFAULT_VLLM_EXEC = f"{DEFAULT_VLLM_VENV}/bin/vllm"
+DEFAULT_VLLM_PYTHON_LAUNCH = f"{DEFAULT_VLLM_VENV}/bin/python3 {DEFAULT_VLLM_EXEC}"
 
 
 @dataclass(frozen=True)
@@ -157,7 +159,7 @@ def ensure_vllm_ready() -> dict[str, Any]:
 
 
 def stop_vllm() -> dict[str, Any]:
-    remote_script = r"""
+    remote_script = """
 set -euo pipefail
 python3 - <<'PY'
 import json
@@ -168,6 +170,30 @@ from pathlib import Path
 
 pid_file = Path("/home/pto/lean/logs/vllm_8000.pid")
 stopped_pids = []
+vllm_exec = "__VLLM_EXEC__"
+vllm_python_launch = "__VLLM_PYTHON_LAUNCH__"
+
+def list_matching_vllm_pids() -> list[int]:
+    ps = subprocess.run(
+        ["ps", "-e", "-o", "pid=", "-o", "args="],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    matched: list[int] = []
+    for line in ps.stdout.splitlines():
+        parts = line.split(maxsplit=1)
+        if len(parts) != 2:
+            continue
+        pid_text, command = parts
+        if vllm_exec + " serve" not in command and vllm_python_launch + " serve" not in command:
+            continue
+        if "--port 8000" not in command:
+            continue
+        if "/home/pto/lean/models/Qwen/Qwen3-1___7B-Base" not in command:
+            continue
+        matched.append(int(pid_text))
+    return matched
 
 def list_descendants(root_pid: int) -> list[int]:
     ps = subprocess.run(
@@ -213,10 +239,29 @@ if pid_file.exists():
         except OSError:
             pass
     pid_file.unlink(missing_ok=True)
+
+for pid in list_matching_vllm_pids():
+    if pid in stopped_pids:
+        continue
+    try:
+        for child_pid in reversed(list_descendants(pid)):
+            try:
+                os.kill(child_pid, signal.SIGTERM)
+                stopped_pids.append(child_pid)
+            except ProcessLookupError:
+                pass
+        os.kill(pid, signal.SIGTERM)
+        stopped_pids.append(pid)
+    except ProcessLookupError:
+        pass
 subprocess.run(["sleep", "2"], check=False)
 print(json.dumps({"status": "stopped", "stopped_pids": stopped_pids}))
 PY
 """.strip()
+    remote_script = remote_script.replace("__VLLM_EXEC__", DEFAULT_VLLM_EXEC).replace(
+        "__VLLM_PYTHON_LAUNCH__",
+        DEFAULT_VLLM_PYTHON_LAUNCH,
+    )
     result = _run_remote_bash(remote_script)
     _raise_on_failure(result, "vLLM stop")
     return json.loads(result.stdout)
@@ -227,6 +272,7 @@ def run_vllm_benchmark(
     prompt: str,
     profile: str = DEFAULT_PROFILE,
     max_new_tokens: int | None = None,
+    warmup_requests: int = 1,
 ) -> dict[str, Any]:
     env = {
         "PROFILE": profile,
@@ -235,9 +281,13 @@ def run_vllm_benchmark(
         "MODEL_NAME": DEFAULT_MODEL_NAME,
         "BASE_URL": "http://127.0.0.1:8000",
         "PROMPT_OVERRIDE": prompt,
+        "SKIP_REMOTE_SYNC": "1",
     }
     if max_new_tokens is not None:
         env["MAX_NEW_TOKENS_OVERRIDE"] = str(max_new_tokens)
+    for _ in range(max(0, warmup_requests)):
+        warmup_result = _run_shell_script("remote_openai_backend_benchmark.sh", env=env)
+        _raise_on_failure(warmup_result, "vLLM warmup benchmark")
     result = _run_shell_script("remote_openai_backend_benchmark.sh", env=env)
     _raise_on_failure(result, "vLLM benchmark")
     return _extract_last_json(result.stdout)
@@ -249,6 +299,8 @@ def run_leanstack_benchmark(
     profile: str = DEFAULT_PROFILE,
     max_new_tokens: int | None = None,
     runtime_mode: str = "semantic",
+    resident_requests: int = 3,
+    warmup_requests: int = 1,
 ) -> dict[str, Any]:
     env = {
         "MODEL_ID": DEFAULT_MODEL_ID,
@@ -257,6 +309,9 @@ def run_leanstack_benchmark(
         "NUM_LAYERS": "0",
         "PROMPT_OVERRIDE": prompt,
         "PROMPT_FORMAT_OVERRIDE": "raw",
+        "RESIDENT_REQUESTS": str(resident_requests),
+        "WARMUP_REQUESTS": str(warmup_requests),
+        "SKIP_REMOTE_SYNC": "1",
     }
     if max_new_tokens is not None:
         env["MAX_NEW_TOKENS_OVERRIDE"] = str(max_new_tokens)

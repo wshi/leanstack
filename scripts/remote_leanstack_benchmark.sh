@@ -20,9 +20,15 @@ PROMPT_OVERRIDE="${PROMPT_OVERRIDE:-}"
 PROMPT_FORMAT_OVERRIDE="${PROMPT_FORMAT_OVERRIDE:-}"
 MAX_PREFILL_TOKENS_OVERRIDE="${MAX_PREFILL_TOKENS_OVERRIDE:-}"
 MAX_NEW_TOKENS_OVERRIDE="${MAX_NEW_TOKENS_OVERRIDE:-}"
+RESIDENT_REQUESTS="${RESIDENT_REQUESTS:-3}"
+WARMUP_REQUESTS="${WARMUP_REQUESTS:-1}"
+IGNORE_EOS="${IGNORE_EOS:-1}"
+SKIP_REMOTE_SYNC="${SKIP_REMOTE_SYNC:-0}"
 source "$ROOT/scripts/remote_helpers.sh"
 
-"$ROOT/scripts/remote_sync.sh"
+if [[ "$SKIP_REMOTE_SYNC" != "1" ]]; then
+  "$ROOT/scripts/remote_sync.sh"
+fi
 load_remote_cmd "$REMOTE_SCRIPT"
 
 COMMAND="set -euo pipefail; \
@@ -49,6 +55,9 @@ python3 /home/pto/lean/repo/experiments/models/qwen_explicit_runtime_loop.py \
   --prompt-format \"\$PROMPT_FORMAT\" \
   --max-prefill-tokens \"\$MAX_PREFILL_TOKENS\" \
   --max-new-tokens \"\$MAX_NEW_TOKENS\" \
+  --resident-requests \"$RESIDENT_REQUESTS\" \
+  --warmup-requests \"$WARMUP_REQUESTS\" \
+  $( [[ "$IGNORE_EOS" == "1" ]] && printf '%s' '--ignore-eos' ) \
   --output \"\$OUTPUT_PATH\" > /dev/null; \
 cat \"\$OUTPUT_PATH\""
 

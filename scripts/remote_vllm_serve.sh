@@ -25,6 +25,18 @@ source "$ROOT/scripts/remote_helpers.sh"
 load_remote_cmd "$REMOTE_SCRIPT"
 
 COMMAND="set -euo pipefail; \
+cleanup_stale_vllm() { \
+  local model_ref_local=\"$MODEL_PATH\"; \
+  local vllm_exec=\"$VLLM_VENV/bin/vllm\"; \
+  local vllm_python=\"$VLLM_VENV/bin/python3 $VLLM_VENV/bin/vllm\"; \
+  if [[ -z \"\$model_ref_local\" && -f \"$MODEL_PATH_FILE\" ]]; then model_ref_local=\$(<\"$MODEL_PATH_FILE\"); fi; \
+  ps -eo pid=,args= | while read -r pid rest; do \
+    [[ \"\$rest\" == *\"\$vllm_exec serve\"* || \"\$rest\" == *\"\$vllm_python serve\"* ]] || continue; \
+    [[ \"\$rest\" == *\"--port $PORT\"* ]] || continue; \
+    if [[ -n \"\$model_ref_local\" && \"\$rest\" != *\"\$model_ref_local\"* ]]; then continue; fi; \
+    kill \"\$pid\" 2>/dev/null || true; \
+  done; \
+}; \
 source \"$VLLM_VENV/bin/activate\"; \
 if [[ -f \"$PYTHON_DEV_ROOT/usr/include/python3.12/Python.h\" ]]; then \
   export LEANSTACK_PYTHON_DEV_ROOT=\"$PYTHON_DEV_ROOT\"; \
@@ -40,8 +52,26 @@ mkdir -p \"$LOG_DIR\"; \
 PID_FILE=\"$LOG_DIR/vllm_${PORT}.pid\"; \
 LOG_FILE=\"$LOG_DIR/vllm_${PORT}.log\"; \
 if [[ -f \"\$PID_FILE\" ]] && kill -0 \$(<\"\$PID_FILE\") 2>/dev/null; then \
-  echo \"vLLM already running with pid \$(<\"\$PID_FILE\")\"; \
+  if curl -fsS \"http://$VLLM_HOST:$PORT/v1/models\" >/dev/null 2>&1; then \
+    echo \"vLLM already running with pid \$(<\"\$PID_FILE\")\"; \
+  else \
+    kill \$(<\"\$PID_FILE\") 2>/dev/null || true; \
+    rm -f \"\$PID_FILE\"; \
+    cleanup_stale_vllm; \
+    sleep 2; \
+    nohup vllm serve \"\$MODEL_REF\" \
+      --host \"$VLLM_HOST\" \
+      --port \"$PORT\" \
+      --dtype \"$DTYPE\" \
+      --served-model-name \"$SERVED_MODEL_NAME\" \
+      --gpu-memory-utilization \"$GPU_MEMORY_UTILIZATION\" \
+      --max-model-len \"$MAX_MODEL_LEN\" \
+      > \"\$LOG_FILE\" 2>&1 < /dev/null & \
+    echo \$! > \"\$PID_FILE\"; \
+  fi; \
 else \
+  cleanup_stale_vllm; \
+  sleep 2; \
   nohup vllm serve \"\$MODEL_REF\" \
     --host \"$VLLM_HOST\" \
     --port \"$PORT\" \
