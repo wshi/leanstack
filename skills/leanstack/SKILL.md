@@ -14,6 +14,7 @@ Use this skill when working in `/Users/wei/work/spark/leanstack`.
 3. Treat the DGX Spark machine as the truth source for kernel validation.
 4. Keep repo-facing docs and implementation notes in English.
 5. Treat broad compatibility as a deferred cost unless the current task truly requires it.
+6. Treat the user request as the only preferred dynamic input for the first model-chip contract.
 
 ## First files to read
 
@@ -36,6 +37,7 @@ Use this skill when working in `/Users/wei/work/spark/leanstack`.
 2. Extend the smallest layer that solves the task.
 3. Prefer model-chip-specific changes over general framework-style abstractions.
 4. Update `docs/EXECUTION_PLAN.md` when a phase gate or blocker changes.
+5. Prefer static execution contracts over runtime discovery logic whenever the first Qwen3-32B + GB10 path allows it.
 
 ### Kernel bring-up
 
@@ -63,6 +65,7 @@ Use this skill when working in `/Users/wei/work/spark/leanstack`.
 4. Keep adapter rules in code or docs, never as hidden assumptions.
 5. Treat non-thinking mode as the default throughput benchmark path unless the task explicitly studies reasoning mode.
 6. Make compatibility costs explicit when proposing any broader abstraction or fallback.
+7. Make runtime uncertainty explicit when a path still depends on framework heuristics or CPU offload.
 
 ## Guardrails
 
@@ -78,6 +81,7 @@ Use this skill when working in `/Users/wei/work/spark/leanstack`.
 ```bash
 PYTHONPATH=src python3 -m leanstack.cli show-plan
 PYTHONPATH=src python3 -m leanstack.cli remote-env
+PYTHONPATH=src python3 -m leanstack.cli show-contract --model qwen
 PYTHONPATH=src python3 -m leanstack.cli show-blueprint --model qwen
 ./scripts/remote_bootstrap.sh
 ./scripts/remote_sync.sh

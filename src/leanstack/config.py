@@ -21,4 +21,7 @@ class ModelSpec:
     kv_layout: str
     required_kernels: tuple[str, ...]
     bring_up_sequence: tuple[str, ...] = field(default_factory=tuple)
+    static_contract: tuple[str, ...] = field(default_factory=tuple)
+    dynamic_inputs: tuple[str, ...] = field(default_factory=tuple)
+    deferred_compatibility: tuple[str, ...] = field(default_factory=tuple)
     notes: tuple[str, ...] = field(default_factory=tuple)

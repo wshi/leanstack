@@ -46,6 +46,20 @@ Whenever a new layer, interface, or fallback path is proposed, the default quest
 
 If it is only a compatibility tax, it should be deferred.
 
+### 2b. Runtime uncertainty should be designed out
+
+For the first contract, the stack should avoid discovering core execution decisions at runtime.
+
+The preferred shape is:
+
+- static model geometry
+- static kernel inventory
+- static memory layout
+- static dispatch order
+- dynamic user request only
+
+If runtime behavior still depends on framework heuristics such as `device_map="auto"` or opportunistic CPU offload, the stack is not yet in its target form.
+
 ### 3. Model support is adapter-driven
 
 Each model family gets an adapter that declares:
@@ -79,6 +93,12 @@ The initial adapter and runtime should be shaped around the first verified targe
 - Blackwell-class memory and tensor-core behavior
 
 This is a deliberate optimization target, not a generic abstraction accident.
+
+That implies a more aggressive simplification rule:
+
+- no runtime search for architecture-specific behavior
+- no hardware-agnostic placement logic in the first path
+- no hidden decision points beyond those induced by user input length and decode progress
 
 ### 5a. Agent regeneration is part of the design
 

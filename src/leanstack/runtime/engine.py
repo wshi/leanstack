@@ -25,10 +25,34 @@ class RuntimeBlueprint:
         return "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class StaticInferenceContract:
+    model: ModelSpec
+
+    def render(self) -> str:
+        lines = [f"Static inference contract for {self.model.family} ({self.model.key})"]
+        lines.append("Fixed:")
+        for item in self.model.static_contract:
+            lines.append(f"- {item}")
+        lines.append("Dynamic:")
+        for item in self.model.dynamic_inputs:
+            lines.append(f"- {item}")
+        if self.model.deferred_compatibility:
+            lines.append("Deferred compatibility:")
+            for item in self.model.deferred_compatibility:
+                lines.append(f"- {item}")
+        return "\n".join(lines)
+
+
 def build_runtime_blueprint(model: ModelSpec) -> RuntimeBlueprint:
     return RuntimeBlueprint(
         model=model,
         components=(
+            RuntimeComponent(
+                name="Static contract",
+                responsibility="Freezes model geometry, device target, page layout, and kernel inventory so execution does not rediscover them at runtime.",
+                exit_criterion="Only the user request payload remains dynamic between comparable runs.",
+            ),
             RuntimeComponent(
                 name="Block manager",
                 responsibility="Owns paged KV blocks, reuse, and eviction policy.",
@@ -51,3 +75,7 @@ def build_runtime_blueprint(model: ModelSpec) -> RuntimeBlueprint:
             ),
         ),
     )
+
+
+def build_static_inference_contract(model: ModelSpec) -> StaticInferenceContract:
+    return StaticInferenceContract(model=model)

@@ -24,6 +24,7 @@ Deliverables:
 - rotary embedding kernel
 - GQA paged-attention microkernel plan for `Qwen/Qwen3-32B`
 - SiLU-gated MLP fusion plan for `Qwen/Qwen3-32B` blocks
+- static execution assumptions for the first model-chip contract
 
 Exit gate:
 
@@ -38,6 +39,7 @@ Deliverables:
 - prefill/decode scheduler
 - execution graph with explicit kernel dispatch
 - explicit record of which generic framework features are being deferred as compatibility tax
+- explicit removal plan for automatic placement and CPU-offload uncertainty in the first path
 
 Exit gate:
 
@@ -90,7 +92,7 @@ Exit gate:
 
 ## Current blockers to clear
 
-1. Finish the full `Qwen/Qwen3-32B` checkpoint fetch on the remote machine and validate the first BF16 baseline run.
+1. Replace the current `transformers + device_map=auto` CPU-offload baseline with an explicit GPU-resident first path.
 2. Translate the first transformer block into explicit kernel requirements instead of importing a monolithic runtime.
 3. Prepare official baseline configurations for `vLLM` and `SGLang` on the same machine and model profile.
 4. Define the first benchmark table format, including software-complexity and agent-cost proxies, before adding a larger serve surface.

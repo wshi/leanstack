@@ -25,6 +25,23 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
             "bring up prefill",
             "bring up decode with KV reuse",
         ),
+        static_contract=(
+            "Model architecture is fixed to Qwen/Qwen3-32B with 64 layers, hidden size 5120, and GQA geometry 64Q/8KV/128.",
+            "Hardware target is fixed to a GB10-class Blackwell machine.",
+            "Weight dtype is fixed to BF16 for the first execution path.",
+            "KV page layout, attention path, RoPE policy, and MLP fusion rules are fixed by the adapter.",
+            "Kernel inventory and dispatch order are fixed by the model-chip contract, not discovered at runtime.",
+            "The intended execution path is GPU-resident and explicit, without framework-managed CPU offload.",
+        ),
+        dynamic_inputs=(
+            "User request payload: prompt tokens and requested decode budget.",
+            "Stopping condition derived from generated tokens or stop tokens.",
+        ),
+        deferred_compatibility=(
+            "Cross-model compatibility outside the first Qwen3-32B contract.",
+            "Cross-hardware portability beyond the first GB10 / Blackwell target.",
+            "Framework-style automatic placement, fallback, and heterogeneous offload behavior.",
+        ),
         notes=(
             "Prefer ModelScope or relay-based download if Hugging Face is unreachable from the remote host.",
             "Keep Qwen as the first adapter until the runtime spine is stable.",
@@ -53,6 +70,7 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
             "bring up prefill",
             "bring up decode with KV reuse",
         ),
+        dynamic_inputs=("User request payload.",),
         notes=(
             "Do not claim a latest GLM checkpoint without verifying a dated primary source.",
             "Treat remote weight loading requirements as part of the adapter contract.",

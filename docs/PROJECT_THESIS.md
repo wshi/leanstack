@@ -31,6 +31,7 @@ That compatibility is valuable, but it also creates a large software tax.
 - let an agent synthesize and regenerate the missing software
 - spend tokens instead of carrying a permanently generalized runtime
 - recover efficiency, inspectability, and customization from that narrower scope
+- eliminate as much runtime uncertainty as possible so the user request becomes the dominant dynamic variable
 
 The project is therefore not only a performance effort. It is an economic and architectural experiment about when agent cost is lower than compatibility cost.
 
@@ -51,6 +52,7 @@ It begins by asking how small the stack can become if:
 - the hardware target is fixed
 - the model target is fixed
 - the agent can rewrite code quickly
+- execution-time uncertainty is intentionally removed from everything except the user request
 
 ### 2. Qwen3-32B is the first contract
 
@@ -64,6 +66,17 @@ The initial system is shaped around the public and remotely verified `Qwen/Qwen3
 - intermediate size 25600
 - BF16 checkpoint
 - rotary position embedding with `rope_theta=1_000_000`
+
+The intended outcome is that this contract becomes static:
+
+- fixed model geometry
+- fixed tensor layout
+- fixed page layout
+- fixed kernel set
+- fixed scheduler shape
+- fixed hardware target
+
+The user request should be the only first-class dynamic input.
 
 ### 3. Blackwell is the first hardware contract
 
@@ -101,6 +114,7 @@ The intended outcome is that a bounded agent token budget can replace a large am
 - `Qwen/Qwen3-32B` runs end to end on the remote Blackwell machine through `leanstack`
 - the critical path is inspectable down to TileIR and SASS
 - the stack exposes a small and auditable runtime surface
+- the core path does not rely on framework-managed uncertainty such as automatic placement or CPU offload
 
 ### Comparative success
 

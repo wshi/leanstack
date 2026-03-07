@@ -19,6 +19,8 @@ This repo explores a different path with five constraints:
 4. `vLLM`, `SGLang`, `llama.cpp`, and similar systems are compatibility-heavy baselines to compare against, not runtime dependencies.
 5. Remote validation on the DGX Spark machine is part of the development loop, not an afterthought.
 
+In the strongest form of this thesis, the only meaningful dynamic input should be the user request payload. Model geometry, chip target, memory layout, kernel inventory, and dispatch policy should all be fixed by the `Qwen3-32B + GB10` contract.
+
 ## Scope
 
 Stage 0 in this repo does four concrete things:
@@ -51,6 +53,7 @@ From `/Users/wei/work/spark/leanstack`:
 ```bash
 PYTHONPATH=src python3 -m leanstack.cli show-plan
 PYTHONPATH=src python3 -m leanstack.cli remote-env
+PYTHONPATH=src python3 -m leanstack.cli show-contract --model qwen
 ./scripts/remote_bootstrap.sh
 ./scripts/remote_sync.sh
 ./scripts/remote_verify.sh

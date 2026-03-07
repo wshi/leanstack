@@ -7,7 +7,7 @@ from pathlib import Path
 from .model_registry import get_model_spec, list_models
 from .plan import render_plan
 from .remote import default_remote_script, parse_remote_script, run_remote_bash
-from .runtime.engine import build_runtime_blueprint
+from .runtime.engine import build_runtime_blueprint, build_static_inference_contract
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,6 +22,10 @@ def build_parser() -> argparse.ArgumentParser:
     blueprint = subparsers.add_parser("show-blueprint", help="Print the runtime blueprint for a model.")
     blueprint.add_argument("--model", default="qwen")
     blueprint.set_defaults(handler=handle_show_blueprint)
+
+    contract = subparsers.add_parser("show-contract", help="Print the static inference contract for a model.")
+    contract.add_argument("--model", default="qwen")
+    contract.set_defaults(handler=handle_show_contract)
 
     remote_env = subparsers.add_parser("remote-env", help="Probe the configured remote environment.")
     remote_env.add_argument("--remote-script", type=Path, default=default_remote_script())
@@ -44,6 +48,12 @@ def handle_list_models(_: argparse.Namespace) -> int:
 def handle_show_blueprint(args: argparse.Namespace) -> int:
     spec = get_model_spec(args.model)
     print(build_runtime_blueprint(spec).render())
+    return 0
+
+
+def handle_show_contract(args: argparse.Namespace) -> int:
+    spec = get_model_spec(args.model)
+    print(build_static_inference_contract(spec).render())
     return 0
 
 
