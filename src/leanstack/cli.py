@@ -4,6 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from .gap_registry import get_gap_report
 from .model_registry import get_model_spec, list_models
 from .plan import render_plan
 from .remote import default_remote_script, parse_remote_script, run_remote_bash
@@ -26,6 +27,10 @@ def build_parser() -> argparse.ArgumentParser:
     contract = subparsers.add_parser("show-contract", help="Print the static inference contract for a model.")
     contract.add_argument("--model", default="qwen")
     contract.set_defaults(handler=handle_show_contract)
+
+    gaps = subparsers.add_parser("show-gaps", help="Print the implementation gaps for a model.")
+    gaps.add_argument("--model", default="qwen")
+    gaps.set_defaults(handler=handle_show_gaps)
 
     remote_env = subparsers.add_parser("remote-env", help="Probe the configured remote environment.")
     remote_env.add_argument("--remote-script", type=Path, default=default_remote_script())
@@ -54,6 +59,11 @@ def handle_show_blueprint(args: argparse.Namespace) -> int:
 def handle_show_contract(args: argparse.Namespace) -> int:
     spec = get_model_spec(args.model)
     print(build_static_inference_contract(spec).render())
+    return 0
+
+
+def handle_show_gaps(args: argparse.Namespace) -> int:
+    print(get_gap_report(args.model).render())
     return 0
 
 

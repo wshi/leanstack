@@ -36,6 +36,7 @@ Stage 0 in this repo does four concrete things:
 - `docs/ARCHITECTURE.md`: stack boundaries and replacement strategy.
 - `docs/BENCHMARK_PLAN.md`: benchmark methodology and comparison rules.
 - `docs/EXECUTION_PLAN.md`: phased build plan and verification gates.
+- `docs/IMPLEMENTATION_GAPS.md`: structured gap analysis from borrowed `transformers` semantics to adapter-owned `cuTile/TileIR` kernels.
 - `docs/MODEL_FIT_ANALYSIS.md`: frontier-model architecture fit versus cuTile complexity.
 - `docs/MODEL_TARGETS.md`: verified model targets and hardware-fit decisions.
 - `docs/REFERENCES.md`: external research, framework, model, and hardware references.
@@ -56,6 +57,7 @@ From `/Users/wei/work/spark/leanstack`:
 PYTHONPATH=src python3 -m leanstack.cli show-plan
 PYTHONPATH=src python3 -m leanstack.cli remote-env
 PYTHONPATH=src python3 -m leanstack.cli show-contract --model qwen
+PYTHONPATH=src python3 -m leanstack.cli show-gaps --model qwen
 ./scripts/remote_bootstrap.sh
 ./scripts/remote_sync.sh
 ./scripts/remote_verify.sh
@@ -97,6 +99,7 @@ As of 2026-03-06, the first milestone is a compiler-grounded vertical slice:
 - ModelScope-based `Qwen/Qwen3-32B` fetch path validated on the remote machine
 - explicit layer-0 Qwen block/prefill/decode probe runs on the remote GB10 without `device_map=\"auto\"`
 - explicit multi-layer Qwen stack probe is now available, so the next extension can happen on the same runtime surface
+- a structured gap registry now tracks the remaining code path from borrowed `transformers` semantics to `cuTile/TileIR` kernels on `sm_121`
 
 The next hard gate is extending the explicit multi-layer path into a full `Qwen/Qwen3-32B` adapter with explicit output projection and end-to-end decode on the remote Blackwell machine, then benchmarking it against framework baselines.
 

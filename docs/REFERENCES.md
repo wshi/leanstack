@@ -17,6 +17,36 @@ Date verified: 2026-03-06
   - Useful as an industry signal that agentic systems can compress GPU-software migration work.
   - Not benchmark evidence by itself; the article explicitly notes that the underlying codebase complexity was not disclosed.
 
+## NVIDIA compiler stack and low-level references
+
+- [NVIDIA/cutile-python](https://github.com/NVIDIA/cutile-python)
+  - Primary source for the public cuTile Python surface.
+  - Relevant because `leanstack` is trying to keep the primary authoring path in the public `cuTile` stack instead of importing a large runtime.
+
+- [NVIDIA/cuda-tile](https://github.com/NVIDIA/cuda-tile)
+  - Primary source for TileIR tooling, including `tilebc` and `tileiras`.
+  - Relevant because the repo depends on a visible `TileIR -> cubin` lowering chain.
+
+- [CUTLASS overview](https://docs.nvidia.com/cutlass/latest/overview.html)
+  - Official NVIDIA reference for current Blackwell-family support and the CuTe DSL positioning.
+  - Useful here because it exposes the current NVIDIA view of Python-DSL-to-kernel authoring and explicitly lists Blackwell-family targets, including DGX Spark / `12.1`.
+
+- [CuTe DSL framework integration](https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/cute_dsl_general/framework_integration.html)
+  - Official reference for how the NVIDIA Python DSL interoperates with framework tensors and exported kernels.
+  - Relevant because `leanstack` needs to move from framework-owned execution to framework-assisted tensor handoff.
+
+- [CuTe DSL AOT compilation](https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/cute_dsl_general/aot_compilation.html)
+  - Official reference for ahead-of-time kernel export.
+  - Relevant because stable `sm_121` kernel packaging is necessary before benchmark claims are trustworthy.
+
+- [Blackwell Compatibility Guide for CUDA Applications](https://docs.nvidia.com/cuda/blackwell-compatibility-guide/index.html)
+  - Official reference for PTX/cubin compatibility behavior and architecture-accelerated feature constraints.
+  - Relevant because it frames when PTX is sufficient and when architecture-specific compilation matters.
+
+- [CUDA Binary Utilities](https://docs.nvidia.com/cuda/cuda-binary-utilities/index.html)
+  - Official reference for cubin/PTX inspection and `nvdisasm`.
+  - Relevant because `leanstack` treats SASS as a verification artifact even when it is not the primary authoring layer.
+
 ## Framework baselines and design references
 
 - [vLLM Architecture Overview](https://docs.vllm.ai/en/stable/design/arch_overview.html)

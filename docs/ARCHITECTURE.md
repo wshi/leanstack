@@ -26,6 +26,14 @@ Every performance-critical path must have a traceable lowering chain:
 
 If a path cannot be inspected at this level, it does not belong in the core stack.
 
+The current remote compiler target should be treated concretely as `GB10 / sm_121`, not as an abstract Blackwell placeholder.
+
+That also implies a strict fallback order:
+
+- `cuTile/TileIR` is the default authoring path
+- `PTX` is an escape hatch for missing compiler coverage on a hotspot
+- `SASS` is a verification artifact, not the main source language
+
 ### 2. Runtime is a small state machine
 
 The runtime should only do five things:
@@ -81,6 +89,11 @@ If a capability is needed in `leanstack`, it should be re-expressed in `leanstac
 - explicit kernel requirement
 - explicit runtime state
 - explicit benchmark consequence
+
+For the same reason, `transformers` should gradually move from "execution provider" to "correctness oracle":
+
+- acceptable today for tokenizer, config, and semantic cross-checks
+- not acceptable as the long-term owner of the model execution path
 
 ### 5. Qwen3-32B and Blackwell define the first contract
 

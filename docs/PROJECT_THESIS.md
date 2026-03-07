@@ -11,6 +11,7 @@ The project thesis is narrower and harder:
 - use a `cuTile -> TileIR -> cubin -> SASS` execution path as the core of the stack
 - target one concrete model first: `Qwen/Qwen3-32B`
 - target one concrete hardware class first: Blackwell, currently the remote GB10 / DGX Spark machine
+- target the actual remote compiler surface as `sm_121`, not a vague "future Blackwell" abstraction
 - treat compatibility-driven software complexity as a tax, not a requirement
 - measure whether an agent-built, hardware-near stack can stay materially simpler than the current framework-heavy ecosystem while remaining performance-competitive
 
@@ -88,6 +89,12 @@ That means:
 - explicit memory movement
 - explicit compilation artifacts
 - explicit performance accounting
+
+That hardware contract also defines the preferred compiler policy:
+
+- mainline: `cuTile -> TileIR -> cubin`
+- fallback: `PTX` only when compiler coverage is the blocker
+- ground truth: inspect `SASS`, but do not make direct SASS authoring the default path
 
 ### 4. Agentic development is part of the point
 
