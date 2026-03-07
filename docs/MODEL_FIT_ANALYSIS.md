@@ -13,14 +13,14 @@ That hardware envelope immediately separates models into two groups:
 
 ## Candidate models
 
-### 1. `Qwen/Qwen3-8B` plus `nvidia/Qwen3-8B-FP4`
+### 1. `Qwen/Qwen3-8B` BF16
 
 Why it is attractive:
 
 - dense causal LM
 - standard GQA attention
 - smaller geometry that is much easier to benchmark on one GB10
-- a clean separation between semantic base and deployment artifact
+- public BF16 checkpoint that matches the currently cleared precision gate
 - strong current quality among open models
 
 cuTile fit:
@@ -32,6 +32,7 @@ Reason:
 - dense transformer blocks with GQA and SwiGLU are the cleanest path for a first kernel catalog
 - no MoE router, no MLA, no DSA-specific sparse path
 - much more credible than the old `Qwen3-32B` path as a first performance target on one GB10
+- public BF16 is the only precision that is actually cleared today on the public `cuTile` path
 
 ### 2. `zai-org/glm-4-9b-hf`
 
@@ -113,7 +114,12 @@ Reason:
 
 ### Best first target if cuTile simplicity is the priority
 
-- `Qwen/Qwen3-8B` semantics with the `nvidia/Qwen3-8B-FP4` deployment artifact
+- `Qwen/Qwen3-8B` BF16
+
+### Best second-step precision target if the public toolchain improves
+
+- revisit FP8 first
+- revisit FP4 only if the public frontend surface or a tightly scoped PTX wedge becomes real
 
 ### Best first target if GLM must remain the first family
 

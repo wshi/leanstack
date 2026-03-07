@@ -7,8 +7,11 @@ Date verified: 2026-03-07
 - The current remote deployment target is `NVIDIA GB10`.
 - The remote machine reports compute capability `12.1`.
 - The remote `tileiras` tool exposes `--gpu-name=sm_121`.
-- The active first contract is `Qwen3-8B semantics + Qwen3-8B-FP4 artifact + GB10/sm_121`.
-- The public remote `cuda.tile 1.1.0` install exposes `float16`, `float32`, `float64`, `bfloat16`, `tfloat32`, `float8_e4m3fn`, and `float8_e5m2`, but no visible public `FP4` or `NVFP4` dtype symbol.
+- The active first contract is `Qwen/Qwen3-8B` BF16 on `GB10 / sm_121`.
+- The executable precision gate currently recommends `bfloat16` as the active public-cuTile precision on `sm_121`.
+- The public remote `cuda.tile 1.1.0` install exposes `float16`, `float32`, `float64`, `bfloat16`, `tfloat32`, `float8_e4m3fn`, and `float8_e5m2`.
+- The current float8 probe reaches the compiler but fails TileIR verification for both public FP8 dtypes.
+- The public Python authoring surface still lacks a complete FP4 or NVFP4 path.
 
 ## What `transformers` still provides today
 
@@ -20,7 +23,7 @@ Today `transformers` still provides these surfaces:
 - tokenizer and chat-template handling
 - config/model-card compatibility surfaces used as reference metadata
 
-That means the current repo already knows how to keep framework heuristics out of the active path. The new blocker is not `device_map` or CPU offload. The new blocker is FP4 compiler feasibility.
+That means the current repo already knows how to keep framework heuristics out of the active path. The new blocker is no longer `device_map` or CPU offload. The new blocker is retargeting the runtime from the slow 32B reference path to a benchmarkable 8B BF16 path.
 
 ## Legacy reference path
 
@@ -38,23 +41,24 @@ But they are no longer the active first target.
 
 The key engineering task is:
 
-1. prove public FP4 compiler feasibility on `sm_121`
-2. keep `Qwen3-8B` semantics and `Qwen3-8B-FP4` artifact ownership explicit
+1. keep the BF16 precision gate green on `sm_121`
+2. keep `Qwen3-8B` semantics and BF16 checkpoint ownership explicit
 3. lower each stable semantic unit into `cuTile -> TileIR -> cubin`
 4. inspect PTX and SASS for the hot kernels
 
 ## Gap matrix
 
-### 1. FP4 compiler feasibility
+### 1. Precision gate discipline
 
 - Current:
-  - official external sources show Blackwell FP4 support in the broader NVIDIA stack
-  - remote inspection of public `cuda.tile 1.1.0` shows visible dtypes only up to FP8
-  - `tileiras` already supports `sm_121`
+  - the executable precision gate returns a real remote result
+  - BF16 clears on `sm_121`
+  - FP8 fails TileIR verification for the current probe
+  - FP4 remains blocked in the public frontend
 - Target:
-  - at least one minimal FP4 or NVFP4 kernel compiles and runs through the public `cuTile`-native path on `sm_121`
+  - BF16 remains the active runtime precision until a narrower precision gate turns positive
 - Why this matters:
-  - if the compiler gate fails, the active project target is blocked before any runtime optimization matters
+  - otherwise the project will keep re-planning around blocked precision assumptions instead of shipping a benchmarkable runtime
 
 ### 2. Semantic ownership
 
@@ -62,38 +66,37 @@ The key engineering task is:
   - `leanstack` already has a legacy explicit Qwen path that owns weight indexing, shard reads, GPU placement, KV state, and layer semantics
   - that path is still tied to the old `Qwen3-32B BF16` reference work
 - Target:
-  - `leanstack` owns `Qwen3-8B` semantics and the `Qwen3-8B-FP4` artifact layout without borrowing execution behavior from `transformers`
+  - `leanstack` owns `Qwen3-8B` semantics and the BF16 checkpoint layout without borrowing execution behavior from `transformers`
 - Why this matters:
-  - the repo already proved the general direction on a legacy path, so the next step is to shrink and retarget the same ownership pattern to the new 8B FP4 contract
+  - the repo already proved the general direction on a legacy path, so the next step is to shrink and retarget the same ownership pattern to the new 8B BF16 contract
 
-### 3. Artifact ownership
+### 3. Checkpoint ownership
 
 - Current:
   - the repo has strong Qwen config and tokenizer handling on the legacy dense path
-  - the repo does not yet own the `Qwen3-8B-FP4` tensor and scale contract
+  - the repo does not yet own the `Qwen3-8B` BF16 tensor contract end-to-end
 - Target:
-  - explicit mapping for FP4 linears, higher-precision residual tensors, and any scale metadata needed by the artifact
+  - explicit mapping for BF16 linears, residual tensors, and logits projection
 - Why this matters:
-  - the semantic contract and the deployment artifact must be separated before kernels can be specialized correctly
+  - the semantic contract and the checkpoint contract must be separated before kernels can be specialized correctly
 
 ### 4. Runtime residency and KV layout
 
 - Current:
   - the repo already has a legacy page-based KV manager and residency logic shaped around `Qwen3-32B BF16`
 - Target:
-  - a smaller residency plan and KV contract specialized for `Qwen3-8B-FP4` on GB10
+  - a smaller residency plan and KV contract specialized for `Qwen3-8B` BF16 on GB10
 - Why this matters:
   - the new target only makes sense if its smaller shape translates into materially simpler and faster residency behavior
 
 ### 5. Kernel catalog
 
 - Current:
-  - no FP4 kernel path is proven yet
+  - BF16 compiles through the public `cuTile` path for the minimal probe
   - the old dense Qwen path still relies on eager PyTorch math for its active semantics
 - Target:
-  - a small `Qwen3-8B-FP4` kernel catalog exists for:
-    - FP4 linear or GEMM path
-    - dequant or scale epilogue where required
+  - a small `Qwen3-8B` BF16 kernel catalog exists for:
+    - BF16 linear or GEMM path
     - RMSNorm
     - RoPE
     - GQA prefill and decode
@@ -101,7 +104,7 @@ The key engineering task is:
     - logits projection
     - sampler
 - Why this matters:
-  - this is the actual bridge from model semantics and FP4 artifact structure to hardware language
+  - this is the actual bridge from model semantics and checkpoint structure to hardware language
 
 ### 6. Benchmark gate
 
@@ -109,18 +112,17 @@ The key engineering task is:
   - the benchmark harness exists
   - the legacy `Qwen3-32B` path is too slow to produce a meaningful comparison
 - Target:
-  - benchmark only after the FP4 compiler gate and first 8B runtime slice are working
+  - benchmark only after the BF16 runtime slice exists for the 8B target
 - Why this matters:
   - otherwise the comparison measures a legacy reference path, not the active thesis
 
 ## Recommended closure order
 
-1. prove or disprove minimal FP4 kernel feasibility on public `cuTile` for `sm_121`
-2. own the `Qwen3-8B-FP4` artifact contract
-3. port the old Qwen semantic path onto the new 8B FP4 contract
-4. package kernels as repeatable `sm_121` artifacts
-5. stand up the first runtime loop
-6. only then freeze baseline configs for external frameworks
+1. own the `Qwen3-8B` BF16 checkpoint contract
+2. port the old Qwen semantic path onto the new 8B BF16 contract
+3. lower decisive BF16 kernels into repeatable `sm_121` artifacts
+4. stand up the first runtime loop
+5. only then freeze baseline configs for external frameworks
 
 ## Compiler-path policy
 
@@ -134,7 +136,7 @@ This keeps the stack inspectable and still close enough to hardware to expose th
 
 ### PTX
 
-PTX is a valid escape hatch when the DSL or TileIR surface cannot yet express a needed behavior, especially for a hotspot FP4 kernel on `sm_121`.
+PTX is a valid escape hatch when the DSL or TileIR surface cannot yet express a needed behavior, especially for a future hotspot FP8 or FP4 kernel on `sm_121`.
 
 But PTX should not become the default authoring layer, for two reasons:
 
@@ -161,8 +163,8 @@ In short:
 
 Yes, there is a real possibility that the current public `cuTile/TileIR` stack either:
 
-- does not expose FP4 at all in the authoring surface we need
-- or underperforms on decisive FP4 Qwen kernels such as projections and decode attention
+- underperforms on decisive BF16 Qwen kernels such as projections and decode attention
+- or continues to block the narrower FP8 and FP4 paths we might want later
 
 That should change the execution strategy, not the thesis:
 

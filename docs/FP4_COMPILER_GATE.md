@@ -4,13 +4,15 @@ Date verified: 2026-03-07
 
 ## Why this gate exists
 
-`leanstack` is now pivoting from the legacy `Qwen3-32B BF16` bring-up path to a narrower first contract:
+`leanstack` previously considered a narrower FP4-first pivot:
 
 - semantic base: `Qwen/Qwen3-8B`
 - deployment artifact: `nvidia/Qwen3-8B-FP4`
 - hardware target: `NVIDIA GB10 / sm_121`
 
 That pivot only makes sense if the public `cuTile` stack can actually express and compile the decisive FP4 kernels.
+
+As of 2026-03-07, this is no longer the active first-format target. The active mainline is `Qwen/Qwen3-8B` BF16, and this document remains as a negative sub-gate for the deferred FP4 route.
 
 ## What is already true
 

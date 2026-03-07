@@ -4,7 +4,7 @@ Date: 2026-03-07
 
 ## Question
 
-Can a `cuTile`-native runtime tuned for `Qwen3-8B-FP4` on `GB10 / sm_121` stay much smaller than current inference frameworks while delivering a real throughput or latency advantage?
+Can a `cuTile`-native runtime tuned for `Qwen/Qwen3-8B` BF16 on `GB10 / sm_121` stay much smaller than current inference frameworks while delivering a real throughput or latency advantage?
 
 The benchmark is not only about runtime speed.
 
@@ -20,7 +20,7 @@ It is also about whether agent-generated, model-chip-specific software can repla
 
 - `llama.cpp`
 
-`llama.cpp` is important as a compact-systems reference, but it is not automatically an apples-to-apples throughput baseline because the active target is an NVIDIA FP4 artifact, not a generic GGUF deployment.
+`llama.cpp` is important as a compact-systems reference, but it is not automatically an apples-to-apples throughput baseline because the active target is a BF16 checkpoint on an NVIDIA-specific compiler path, not a generic GGUF deployment.
 
 ## Benchmark contract
 
@@ -33,10 +33,10 @@ It is also about whether agent-generated, model-chip-specific software can repla
 ### Model
 
 - semantic base: `Qwen/Qwen3-8B`
-- primary deployment artifact: `nvidia/Qwen3-8B-FP4`
-- primary precision path: FP4 or NVFP4 linears on the same artifact where possible
+- primary deployment contract: the public `Qwen/Qwen3-8B` BF16 checkpoint
+- primary precision path: BF16 on the same checkpoint for every system under test where possible
 - exact model snapshot and framework versions must be recorded in every report
-- if an external baseline cannot run the exact FP4 artifact, the report must mark the format mismatch explicitly
+- if an external baseline cannot run the exact BF16 checkpoint or a byte-identical local copy, the report must mark the format mismatch explicitly
 
 ### Prompting policy
 
@@ -67,7 +67,7 @@ The research claim also needs non-throughput metrics:
 - dependency count in the serving path
 - number of long-running processes required
 - amount of configuration needed to launch a comparable run
-- code surface that must be touched to specialize the stack for `Qwen3-8B-FP4` on GB10
+- code surface that must be touched to specialize the stack for `Qwen3-8B` BF16 on GB10
 - agent token budget spent to reach or revise a runnable path, when that information is available from the working session
 
 These are proxies, not perfect cost measures, but they are necessary if the thesis is that compatibility-heavy stacks carry avoidable overhead.
@@ -102,14 +102,14 @@ These are proxies, not perfect cost measures, but they are necessary if the thes
 - use official stable docs and record process shape
 - treat it as a high-performance framework baseline, not a source of core runtime code
 - note where generality or multi-role architecture appears to add operational cost for this narrower target
-- if the tested format is not the exact NVIDIA FP4 artifact, mark the mismatch and keep the result separate from exact-format conclusions
+- if the tested format is not the exact BF16 checkpoint, mark the mismatch and keep the result separate from exact-format conclusions
 
 ### For `SGLang`
 
 - use official stable docs and record enabled features explicitly
 - disable unrelated features unless they are part of the tested profile
-- note which features are irrelevant to the narrow `Qwen3-8B-FP4 + GB10` target but still shape operational complexity
-- if the tested format is not the exact NVIDIA FP4 artifact, mark the mismatch and keep the result separate from exact-format conclusions
+- note which features are irrelevant to the narrow `Qwen3-8B BF16 + GB10` target but still shape operational complexity
+- if the tested format is not the exact BF16 checkpoint, mark the mismatch and keep the result separate from exact-format conclusions
 
 ### For `llama.cpp`
 
@@ -118,9 +118,10 @@ These are proxies, not perfect cost measures, but they are necessary if the thes
 
 ## Gate before benchmarking
 
-No formal benchmark should be treated as dispositive until the repo clears the FP4 compiler gate:
+No formal benchmark should be treated as dispositive until the repo clears the BF16 runtime gate:
 
-- if `leanstack` cannot emit at least one real FP4 kernel on `sm_121`, performance comparisons are still mostly about framework readiness, not about the specialized stack thesis
+- the precision gate already says BF16 is the active public-cuTile precision on `sm_121`
+- but performance comparisons are still premature until the 8B BF16 runtime stops depending on legacy eager PyTorch math for the hot path
 
 ## Desired output
 

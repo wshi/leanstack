@@ -5,12 +5,11 @@ Date verified: 2026-03-07
 ## Primary target
 
 - semantic base: `Qwen/Qwen3-8B`
-- deployment artifact: `nvidia/Qwen3-8B-FP4`
+- active deployment contract: the public `Qwen/Qwen3-8B` BF16 checkpoint
 
 Primary source:
 
 - `https://huggingface.co/Qwen/Qwen3-8B`
-- `https://huggingface.co/nvidia/Qwen3-8B-FP4`
 
 Why it is the first target:
 
@@ -19,7 +18,8 @@ Why it is the first target:
 - much smaller and more benchmarkable than the legacy `Qwen3-32B` path on one GB10
 - simpler cuTile kernel decomposition than frontier MoE and MLA models
 - more credible as a first performance target because the model is small enough to avoid a trivial throughput collapse
-- directly tests the thesis that a fixed model-format-chip contract can justify a much narrower runtime
+- directly tests the thesis that a fixed model-chip contract can justify a much narrower runtime
+- the active precision gate already clears BF16 on the public toolchain
 
 Validated semantic configuration snapshot from the public `Qwen/Qwen3-8B` contract:
 
@@ -30,22 +30,23 @@ Validated semantic configuration snapshot from the public `Qwen/Qwen3-8B` contra
 - grouped-query attention
 - Qwen3 chat / thinking controls remain part of the tokenizer or prompt contract, not the core kernel contract
 
-Artifact note:
+Checkpoint note:
 
-- `leanstack` should treat the semantic base and the FP4 deployment artifact as separate but linked contracts
+- `leanstack` should treat the semantic base and the BF16 checkpoint as separate but linked contracts
 - the semantic base defines geometry, RoPE policy, and prompt semantics
-- the FP4 artifact defines the exact linear weight and scale layout that the runtime must own
+- the active BF16 checkpoint defines the exact tensor layout that the runtime must own
+- FP8 and FP4 remain deferred precision investigations, not the active first-format target
 
 Current blocker:
 
-- the public remote `cuda.tile 1.1.0` install exposes dtypes up to FP8, not a visible public FP4 or NVFP4 dtype
-- the remote `tileiras` binary does target `sm_121`, so backend targeting is present even though frontend FP4 coverage is still unproven
-- the remote machine may still need relay or mirror-based delivery for the NVIDIA FP4 artifact if direct access is blocked
+- the runtime still needs to be retargeted from the legacy `Qwen3-32B` work to the smaller 8B geometry
+- the current FP8 probe is still blocked at TileIR verification
+- the current FP4 route is still blocked in the public frontend
 
 First hard gate:
 
-- prove one minimal FP4 or NVFP4 kernel through `cuTile DSL -> TileIR/tilebc -> tileiras -> cubin (sm_121)`
-- do not continue the FP4 runtime plan until this gate is cleared
+- keep one minimal BF16 kernel green through `cuTile DSL -> TileIR/tilebc -> tileiras -> cubin (sm_121)`
+- do not treat FP8 or FP4 as active runtime targets until their gates are cleared
 
 Primary benchmark mode:
 
@@ -83,11 +84,11 @@ Why it is deferred:
 
 ### Baseline success
 
-- remote machine can acquire `Qwen/Qwen3-8B` semantics and the `Qwen3-8B-FP4` deployment artifact, directly or by relay
+- remote machine can acquire `Qwen/Qwen3-8B` directly or by relay
 - one prompt can run through a simple Hugging Face semantic baseline for correctness
-- one minimal FP4 kernel can run through the public compiler path on `sm_121`
+- one minimal BF16 kernel can run through the public compiler path on `sm_121`
 
 ### Stack success
 
 - the new runtime reproduces the same single-request path without falling back to a monolithic serving framework
-- the decisive FP4 linear path is owned by `leanstack`, not by a framework runtime
+- the decisive BF16 linear path is owned by `leanstack`, not by a framework runtime

@@ -10,7 +10,7 @@ The project thesis is narrower and harder:
 
 - use a `cuTile -> TileIR -> cubin -> SASS` execution path as the core of the stack
 - target one concrete semantic contract first: `Qwen/Qwen3-8B`
-- target one concrete deployment artifact first: `nvidia/Qwen3-8B-FP4`
+- target one concrete deployment contract first: the public `Qwen/Qwen3-8B` BF16 checkpoint
 - target one concrete hardware class first: Blackwell, currently the remote GB10 / DGX Spark machine
 - target the actual remote compiler surface as `sm_121`, not a vague "future Blackwell" abstraction
 - treat compatibility-driven software complexity as a tax, not a requirement
@@ -56,12 +56,12 @@ It begins by asking how small the stack can become if:
 - the agent can rewrite code quickly
 - execution-time uncertainty is intentionally removed from everything except the user request
 
-### 2. Qwen3-8B FP4 is the first contract
+### 2. Qwen3-8B BF16 is the first contract
 
-The initial system is now shaped around two linked artifacts:
+The initial system is now shaped around one active deployment contract and two deferred precision investigations:
 
-- semantic base: `Qwen/Qwen3-8B`
-- deployment artifact: `nvidia/Qwen3-8B-FP4`
+- active semantic and checkpoint contract: `Qwen/Qwen3-8B` BF16
+- deferred narrow-precision investigations: public FP8 and FP4 authoring on `sm_121`
 
 The intended static contract is:
 
@@ -69,14 +69,14 @@ The intended static contract is:
 - hidden size 4096
 - grouped-query attention with 32 query heads and 8 KV heads
 - head dimension 128
-- FP4 or NVFP4 linears with explicit scale handling
+- BF16 linears and activations on the first path
 - fixed GB10 / `sm_121` target
 
 The intended outcome is that this contract becomes static:
 
 - fixed model geometry
 - fixed tensor layout
-- fixed quantization and dequantization policy
+- fixed precision policy
 - fixed page layout
 - fixed kernel set
 - fixed scheduler shape
@@ -88,7 +88,8 @@ The first gate is therefore not "run the whole model."
 
 The first gate is:
 
-- prove that the public `cuTile`-native compiler path can emit one real FP4 kernel on `sm_121`
+- keep the executable precision gate green for BF16 on `sm_121`
+- record FP8 and FP4 blockers explicitly instead of hand-waving them away
 
 ### 3. Blackwell is the first hardware contract
 
@@ -104,7 +105,7 @@ That means:
 That hardware contract also defines the preferred compiler policy:
 
 - mainline: `cuTile -> TileIR -> cubin`
-- fallback: `PTX` only when compiler coverage is the blocker
+- fallback: `PTX` only when compiler coverage is the blocker for a decisive hotspot
 - ground truth: inspect `SASS`, but do not make direct SASS authoring the default path
 
 ### 4. Agentic development is part of the point
@@ -129,23 +130,24 @@ The intended outcome is that a bounded agent token budget can replace a large am
 
 ### Technical success
 
-- the repo proves a public `cuTile`-native FP4 path or explicitly records why it failed
-- `Qwen3-8B-FP4` runs end to end on the remote Blackwell machine through `leanstack`
+- the repo keeps a public `cuTile`-native BF16 path running on the remote GB10
+- the repo explicitly records why FP8 and FP4 are still blocked on the public stack
+- `Qwen3-8B` BF16 runs end to end on the remote Blackwell machine through `leanstack`
 - the critical path is inspectable down to TileIR and SASS
 - the stack exposes a small and auditable runtime surface
 - the core path does not rely on framework-managed uncertainty such as automatic placement or CPU offload
 
 ### Comparative success
 
-- `leanstack` is benchmarked against exact-format external baselines on the same machine and model profile
-- `vLLM` and `SGLang` remain required comparison points when they can run the same or a clearly labeled equivalent format
+- `leanstack` is benchmarked against exact-format BF16 external baselines on the same machine and model profile
+- `vLLM` and `SGLang` remain required comparison points when they can run the same BF16 checkpoint or a clearly labeled equivalent snapshot
 - `llama.cpp` is tracked as a secondary deployment reference when the weight format is not apples-to-apples
 - the result table includes `generated tokens/s`, latency, memory use, process shape, operational complexity, and software-stack size proxies
 
 ### Go / no-go success
 
-- if `leanstack` cannot show a real performance or complexity advantage on the fixed `Qwen3-8B-FP4 + GB10` contract, the repo should say so directly
-- if the public `cuTile` path cannot emit the decisive FP4 kernels, that result is part of the research outcome rather than something to hide
+- if `leanstack` cannot show a real performance or complexity advantage on the fixed `Qwen3-8B BF16 + GB10` contract, the repo should say so directly
+- if the public `cuTile` path cannot clear FP8 or FP4 later, that result is part of the research outcome rather than something to hide
 
 ### Research success
 

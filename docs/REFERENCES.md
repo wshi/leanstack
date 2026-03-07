@@ -33,7 +33,7 @@ Date verified: 2026-03-07
 
 - [Blackwell functionality in CUTLASS](https://docs.nvidia.com/cutlass/latest/overview.html#blackwell-functionality)
   - Official NVIDIA reference for Blackwell narrow-precision support in the broader CUTLASS stack.
-  - Relevant because it is part of the external evidence that FP4 or NVFP4 support exists somewhere in the broader NVIDIA stack even though the public `cuda.tile` frontend still needs to be proven.
+  - Relevant because it is part of the external evidence that FP8 or FP4 support exists somewhere in the broader NVIDIA stack even though the public `cuda.tile` path still has active gaps.
 
 - [CuTe DSL framework integration](https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/cute_dsl_general/framework_integration.html)
   - Official reference for how the NVIDIA Python DSL interoperates with framework tensors and exported kernels.
@@ -61,7 +61,7 @@ Date verified: 2026-03-07
 
 - [vLLM Compressed Tensors](https://docs.vllm.ai/en/stable/features/quantization/compressed_tensors.html)
   - Official vLLM reference for compressed-tensor and quantized deployment paths.
-  - Relevant because exact-format or near-format FP4 comparisons must be labeled precisely.
+  - Relevant because exact-format or near-format narrow-precision comparisons must be labeled precisely.
 
 - [vLLM Paged Attention](https://docs.vllm.ai/en/stable/design/paged_attention.html)
   - Official but historical design note.
@@ -81,15 +81,15 @@ Date verified: 2026-03-07
 
 - [SGLang Quantization](https://docs.sglang.io/advanced_features/quantization.html)
   - Official reference for SGLang quantization paths.
-  - Relevant because FP4 benchmark claims should distinguish exact-format support from other quantized variants.
+  - Relevant because any future FP8 or FP4 benchmark claims should distinguish exact-format support from other quantized variants.
 
 ## Target model and target hardware
 
 - [Qwen/Qwen3-8B model card](https://huggingface.co/Qwen/Qwen3-8B)
-  - Primary public reference for Qwen3-8B model features, context claims, and thinking / non-thinking usage guidance.
+  - Primary public reference for the active semantic and BF16 checkpoint target, including thinking / non-thinking usage guidance.
 
 - [nvidia/Qwen3-8B-FP4 model card](https://huggingface.co/nvidia/Qwen3-8B-FP4)
-  - Primary deployment-artifact reference for the active FP4 pivot.
+  - Secondary reference for the deferred FP4 route and for the negative FP4 gate discussion.
 
 - [Qwen/Qwen3-8B on ModelScope](https://www.modelscope.cn/models/Qwen/Qwen3-8B)
   - Primary semantic-base acquisition reference when the remote machine can reach ModelScope more reliably than Hugging Face.

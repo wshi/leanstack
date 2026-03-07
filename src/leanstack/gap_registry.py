@@ -54,7 +54,7 @@ GAP_REGISTRY: dict[str, GapReport] = {
             "then inspect PTX and SASS artifacts for the hot kernels."
         ),
         ptx_fallback=(
-            "Use PTX only when the public cuTile frontend cannot yet express a required FP4 schedule or instruction pattern; "
+            "Use PTX only when the public cuTile frontend cannot yet express a required narrow-precision schedule or instruction pattern; "
             "treat PTX as a temporary escape hatch, not the steady-state interface."
         ),
         sass_stance=(
@@ -63,42 +63,38 @@ GAP_REGISTRY: dict[str, GapReport] = {
         ),
         items=(
             GapItem(
-                key="fp4-compiler-feasibility",
-                title="Prove public FP4 compiler feasibility on sm_121",
-                status="in_progress",
+                key="precision-gate",
+                title="Use the executable precision gate as the source of truth",
+                status="completed",
                 current_state=(
-                    "Official external sources show Blackwell FP4 support in the broader NVIDIA stack, and the remote `tileiras` "
-                    "binary targets `sm_121`, but the installed public `cuda.tile 1.1.0` frontend only exposes visible dtypes up to FP8."
+                    "The remote precision gate now returns a real result: BF16 clears on sm_121, FP8 reaches the compiler but fails "
+                    "TileIR verification for the current float8 vector-add probe, and FP4 lacks a complete public frontend surface."
                 ),
                 target_state=(
-                    "At least one minimal FP4 or NVFP4 GEMM or linear kernel compiles through the public cuTile-native chain "
-                    "and runs on the remote GB10."
+                    "BF16 remains the active first precision target until the executable precision gate turns positive for a narrower format."
                 ),
                 code_surface=(
-                    "docs/FP4_COMPILER_GATE.md",
-                    "experiments/cutile/vector_add.py",
-                    "scripts/remote_verify.sh",
+                    "experiments/cutile/precision_gate.py",
+                    "experiments/cutile/torch_vector_add.py",
+                    "experiments/cutile/fp4_compiler_gate.py",
+                    "scripts/remote_precision_gate.sh",
                 ),
                 next_step=(
-                    "Write a minimal FP4 compiler probe, capture TileIR/cubin/SASS artifacts, and record whether the public frontend "
-                    "can express the needed dtype and scheduling surface."
+                    "Keep the BF16 probe green, and only retry FP8 or FP4 after adding a better narrow-precision kernel probe or a PTX wedge."
                 ),
                 risk=(
-                    "If the public compiler path cannot emit any real FP4 kernel on `sm_121`, the active target is blocked before "
-                    "runtime specialization matters."
+                    "If the repo stops rerunning the precision gate after probe or toolchain changes, it can drift back into unsupported precision assumptions."
                 ),
             ),
             GapItem(
-                key="artifact-contract",
-                title="Own the Qwen3-8B-FP4 artifact contract",
-                status="missing",
+                key="checkpoint-contract",
+                title="Own the Qwen3-8B BF16 checkpoint contract",
+                status="in_progress",
                 current_state=(
-                    "The repo already handles Qwen config and tokenizer metadata well, but it does not yet own the tensor and scale mapping "
-                    "for the `Qwen3-8B-FP4` deployment artifact."
+                    "The repo already handles Qwen config and tokenizer metadata well, and the active target is now the public `Qwen/Qwen3-8B` BF16 checkpoint."
                 ),
                 target_state=(
-                    "The adapter knows how to map FP4 linears, any scale tensors, and higher-precision residual paths without deferring "
-                    "that structure to an external runtime."
+                    "The adapter knows the exact tensor naming, checkpoint layout, and residency assumptions for the BF16 Qwen3-8B target without borrowing runtime ownership."
                 ),
                 code_surface=(
                     "src/leanstack/model_registry.py",
@@ -106,23 +102,22 @@ GAP_REGISTRY: dict[str, GapReport] = {
                     "scripts/remote_qwen_fetch.sh",
                 ),
                 next_step=(
-                    "Fetch or relay the target artifact, inspect its metadata layout, and codify the tensor and scale contract in the adapter."
+                    "Use the existing `Qwen/Qwen3-8B` fetch path as the canonical checkpoint source and codify the BF16 tensor contract in the adapter."
                 ),
                 risk=(
-                    "Without explicit artifact ownership, the runtime cannot know which kernels need FP4 inputs, where scales live, or how "
-                    "to keep the execution path static."
+                    "Without explicit checkpoint ownership, later kernel and residency work will still depend on framework assumptions."
                 ),
             ),
             GapItem(
                 key="semantic-retarget",
-                title="Retarget the legacy Qwen semantic path to the 8B FP4 contract",
+                title="Retarget the legacy Qwen semantic path to the 8B BF16 contract",
                 status="in_progress",
                 current_state=(
                     "The repo already contains a legacy explicit Qwen path for `Qwen3-32B BF16`, including adapter-owned block semantics, "
                     "explicit weight staging, and a leanstack-owned KV path."
                 ),
                 target_state=(
-                    "The same ownership pattern is ported to `Qwen3-8B` semantics with the FP4 artifact layout replacing the older BF16 assumption."
+                    "The same ownership pattern is ported to `Qwen3-8B BF16`, with smaller geometry and a clean checkpoint contract replacing the older 32B assumptions."
                 ),
                 code_surface=(
                     "src/leanstack/runtime/qwen_explicit.py",
@@ -130,24 +125,21 @@ GAP_REGISTRY: dict[str, GapReport] = {
                     "experiments/models/qwen_explicit_runtime_loop.py",
                 ),
                 next_step=(
-                    "Shrink the geometry to the 8B contract, replace BF16 linear assumptions with FP4-aware layout rules, and keep `transformers` "
-                    "only as a correctness oracle."
+                    "Shrink the geometry to the 8B contract, keep BF16 linears explicit, and preserve `transformers` only as a correctness oracle."
                 ),
                 risk=(
-                    "If the old semantic path is copied forward without retargeting the artifact contract, the repo will keep optimizing a legacy path "
-                    "instead of the active thesis."
+                    "If the old semantic path is copied forward without retargeting the geometry, the repo will keep optimizing the wrong model size."
                 ),
             ),
             GapItem(
                 key="residency-and-kv",
-                title="Rebuild residency and KV layout for the smaller FP4 target",
-                status="missing",
+                title="Rebuild residency and KV layout for the smaller BF16 target",
+                status="in_progress",
                 current_state=(
-                    "The repo has a legacy page-based KV manager and residency logic that were shaped around `Qwen3-32B BF16`."
+                    "The repo now has a real page-table-backed KV manager, but the broader runtime shape is still inherited from the 32B reference work."
                 ),
                 target_state=(
-                    "A smaller residency plan and KV contract are specialized for `Qwen3-8B-FP4` on GB10, with static layout decisions "
-                    "and no hidden placement heuristics."
+                    "A smaller residency plan and KV contract are specialized for `Qwen3-8B BF16` on GB10, with static layout decisions and no hidden placement heuristics."
                 ),
                 code_surface=(
                     "src/leanstack/runtime/kv_cache.py",
@@ -155,45 +147,43 @@ GAP_REGISTRY: dict[str, GapReport] = {
                     "src/leanstack/runtime/engine.py",
                 ),
                 next_step=(
-                    "Define the 8B residency plan, page geometry, and transfer policy after the FP4 artifact contract is known."
+                    "Define the 8B residency plan, page geometry, and transfer policy around the BF16 checkpoint rather than the larger legacy path."
                 ),
                 risk=(
-                    "If residency and KV layout are still inherited from the 32B BF16 reference work, the smaller FP4 target will not realize "
-                    "its expected simplicity or throughput advantages."
+                    "If residency and KV layout remain shaped by the 32B reference work, the smaller BF16 target will not realize its expected throughput advantage."
                 ),
             ),
             GapItem(
                 key="kernel-catalog",
-                title="Build the FP4-first kernel catalog",
+                title="Build the BF16-first kernel catalog",
                 status="missing",
                 current_state=(
-                    "No FP4 kernel path is proven yet, and the legacy Qwen path still relies on eager PyTorch math for active semantics."
+                    "BF16 compiles and runs through the public cuTile path for the minimal vector-add probe, but the Qwen runtime still relies on eager PyTorch math."
                 ),
                 target_state=(
-                    "A compact kernel catalog exists for FP4 linears or GEMMs, dequant or scale epilogues, RMSNorm, RoPE, GQA prefill, "
-                    "GQA decode, gated MLP, logits projection, and sampling."
+                    "A compact BF16 kernel catalog exists for GEMM, RMSNorm, RoPE, GQA prefill, GQA decode, gated MLP, logits projection, and sampling."
                 ),
                 code_surface=(
                     "src/leanstack/runtime/qwen_explicit.py",
-                    "experiments/cutile/vector_add.py",
-                    "docs/FP4_COMPILER_GATE.md",
+                    "experiments/cutile/torch_vector_add.py",
+                    "experiments/cutile/precision_gate.py",
                 ),
                 next_step=(
-                    "After the compiler probe succeeds, start with the decisive FP4 linear path, then lower norms, RoPE, and the rest of the decode path."
+                    "Start with BF16 linears, norms, and RoPE on the active path, then revisit FP8 or FP4 only after the BF16 runtime is benchmarkable."
                 ),
                 risk=(
-                    "If the kernel catalog never clears the FP4 linear and decode hot paths, the new target will not produce a meaningful performance case."
+                    "If the BF16 runtime never leaves eager PyTorch math, the project will still lack a fair specialized-stack performance comparison."
                 ),
             ),
             GapItem(
                 key="benchmark-gate",
-                title="Benchmark only after the FP4 runtime exists",
+                title="Benchmark only after the 8B BF16 runtime exists",
                 status="in_progress",
                 current_state=(
-                    "The benchmark harness exists, but the legacy `Qwen3-32B` path is too slow to produce a meaningful specialized-stack comparison."
+                    "The benchmark harness exists, and the precision gate now recommends BF16 as the active target, but the runtime is not yet rebuilt around 8B BF16."
                 ),
                 target_state=(
-                    "The first real benchmark table measures the active `Qwen3-8B-FP4 + GB10` contract and records a clear go / no-go conclusion."
+                    "The first real benchmark table measures the active `Qwen3-8B BF16 + GB10` contract and records a clear go / no-go conclusion."
                 ),
                 code_surface=(
                     "src/leanstack/benchmark.py",
@@ -201,10 +191,10 @@ GAP_REGISTRY: dict[str, GapReport] = {
                     "scripts/render_benchmark_report.py",
                 ),
                 next_step=(
-                    "Keep benchmark scripts ready, but do not treat any result as dispositive until the FP4 compiler gate and first 8B runtime slice are working."
+                    "Rebuild the runtime around Qwen3-8B BF16 first, then run exact-format BF16 comparisons against external frameworks."
                 ),
                 risk=(
-                    "Benchmarking too early will compare a legacy reference path against mature frameworks and produce the wrong project conclusion."
+                    "Benchmarking too early will compare a partially retargeted runtime against mature frameworks and produce the wrong project conclusion."
                 ),
             ),
         ),

@@ -1,6 +1,6 @@
 # leanstack
 
-`leanstack` is a clean-slate, cuTile-native, Blackwell-first LLM inference stack.
+`leanstack` is a clean-slate, cuTile-native, GB10-first LLM inference stack.
 
 The name is intentional:
 
@@ -15,11 +15,11 @@ This repo explores a different path with five constraints:
 
 1. The execution path must stay explicit down to `cuTile -> TileIR -> cubin -> SASS`.
 2. The runtime must stay small enough that an agent can regenerate and modify it cheaply.
-3. The first contract is a model-chip pair, `Qwen3-8B semantics + FP4 deployment artifact` on `GB10 / sm_121`, not "all models on all hardware."
+3. The first contract is a model-chip pair, `Qwen/Qwen3-8B + BF16 checkpoint` on `GB10 / sm_121`, not "all models on all hardware."
 4. `vLLM`, `SGLang`, `llama.cpp`, and similar systems are compatibility-heavy baselines to compare against, not runtime dependencies.
 5. Remote validation on the DGX Spark machine is part of the development loop, not an afterthought.
 
-In the strongest form of this thesis, the only meaningful dynamic input should be the user request payload. Model geometry, chip target, quantization policy, memory layout, kernel inventory, and dispatch policy should all be fixed by the `Qwen3-8B-FP4 + GB10` contract.
+In the strongest form of this thesis, the only meaningful dynamic input should be the user request payload. Model geometry, chip target, precision policy, memory layout, kernel inventory, and dispatch policy should all be fixed by the `Qwen3-8B BF16 + GB10` contract. FP8 and FP4 stay deferred until the executable precision gate turns positive for them on the public toolchain.
 
 ## Scope
 
@@ -27,8 +27,8 @@ Stage 0 in this repo does five concrete things:
 
 1. Defines the project thesis for an agent-built, model-chip-specific LLM stack.
 2. Provides local and remote tooling to validate the cuTile -> TileIR -> cubin -> SASS path.
-3. Separates `Qwen/Qwen3-8B` semantic ownership from the `nvidia/Qwen3-8B-FP4` deployment artifact.
-4. Makes FP4 compiler feasibility on `GB10 / sm_121` the first hard gate before more runtime work.
+3. Keeps precision choice explicit through an executable BF16 / FP8 / FP4 gate on the remote machine.
+4. Rebuilds the runtime around `Qwen/Qwen3-8B` BF16 instead of the legacy `Qwen3-32B` reference path.
 5. Defines the benchmark contract against `vLLM`, `SGLang`, and other external baselines, including both runtime efficiency and software-stack complexity.
 
 ## Repository layout
@@ -38,12 +38,15 @@ Stage 0 in this repo does five concrete things:
 - `docs/BENCHMARK_PLAN.md`: benchmark methodology and comparison rules.
 - `docs/EXECUTION_PLAN.md`: phased build plan and verification gates.
 - `docs/IMPLEMENTATION_GAPS.md`: structured gap analysis from borrowed `transformers` semantics to adapter-owned `cuTile/TileIR` kernels.
-- `docs/FP4_COMPILER_GATE.md`: the current evidence and gate criteria for a public cuTile-native FP4 path on `sm_121`.
+- `docs/PRECISION_GATES.md`: the active BF16 / FP8 / FP4 gate results for the public cuTile stack on `sm_121`.
+- `docs/FP4_COMPILER_GATE.md`: the narrower negative sub-gate for the public FP4 authoring surface.
 - `docs/MODEL_FIT_ANALYSIS.md`: frontier-model architecture fit versus cuTile complexity.
 - `docs/MODEL_TARGETS.md`: verified model targets and hardware-fit decisions.
 - `docs/REFERENCES.md`: external research, framework, model, and hardware references.
 - `docs/REMOTE_VALIDATION.md`: remote workflow and artifact layout.
 - `experiments/cutile/vector_add.py`: known-good cuTile smoke kernel.
+- `experiments/cutile/torch_vector_add.py`: torch-backed minimal dtype probe for BF16 and FP8 reachability.
+- `experiments/cutile/precision_gate.py`: executable BF16 / FP8 / FP4 precision-gate probe for the current public cuTile install.
 - `experiments/cutile/fp4_compiler_gate.py`: executable FP4 compiler-gate probe for the current public cuTile install.
 - `experiments/models/hf_causal_lm_smoke.py`: baseline Hugging Face causal LM smoke path.
 - `experiments/models/qwen_explicit_block_probe.py`: explicit Qwen loader and layer-0 block/prefill/decode probe.
@@ -67,6 +70,7 @@ PYTHONPATH=src python3 -m leanstack.cli show-gaps --model qwen
 ./scripts/remote_sync.sh
 ./scripts/remote_verify.sh
 ./scripts/remote_fp4_inventory.sh
+./scripts/remote_precision_gate.sh
 ./scripts/remote_fp4_gate.sh
 ./scripts/remote_model_probe.sh
 MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_fetch.sh
@@ -86,7 +90,7 @@ If the remote machine cannot access a site directly, download on the Mac and rel
 ./scripts/push_local_file_to_remote.sh <local-path> <remote-path>
 ```
 
-`remote_qwen_fetch.sh` installs `modelscope` on the remote host if needed, downloads a Qwen snapshot into `/home/pto/lean/models`, and records the resolved local snapshot path so `remote_qwen_baseline.sh` can prefer the local copy over a public model id. For the active pivot, use it first for the `Qwen/Qwen3-8B` semantic contract. The `nvidia/Qwen3-8B-FP4` deployment artifact may require relay from the Mac if the remote host cannot fetch it directly.
+`remote_qwen_fetch.sh` installs `modelscope` on the remote host if needed, downloads a Qwen snapshot into `/home/pto/lean/models`, and records the resolved local snapshot path so `remote_qwen_baseline.sh` can prefer the local copy over a public model id. For the active pivot, use it first for the `Qwen/Qwen3-8B` BF16 contract.
 
 For a metadata-only preflight before downloading the full checkpoint:
 
@@ -100,21 +104,23 @@ As of 2026-03-07, the active milestone is no longer "run the largest possible Qw
 
 The active milestone is:
 
-- prove whether the public `cuTile` stack can express one real FP4 kernel on `GB10 / sm_121`
-- map `Qwen3-8B` semantics and the `Qwen3-8B-FP4` deployment artifact into an adapter-owned contract
-- benchmark only after that compiler gate is cleared
+- keep the public BF16 `cuTile` path green on `GB10 / sm_121`
+- rebuild the runtime around `Qwen/Qwen3-8B` BF16 with adapter-owned placement, KV state, and kernel boundaries
+- benchmark only after that 8B BF16 runtime slice exists
 
 Current facts:
 
 - local repo scaffolded from zero
 - remote cuTile smoke wired into the DGX Spark machine
-- the public remote `cuda.tile 1.1.0` install exposes dtypes up to FP8 in `cuda/tile/_datatype.py`, but not a public `FP4` or `NVFP4` dtype symbol
-- the public remote `tileiras` install does target `sm_121`, so backend code generation target coverage exists even though public frontend FP4 coverage is still unproven
-- the executable remote gate `./scripts/remote_fp4_gate.sh` now records this status as a real `blocked/cleared` result instead of leaving it only in documentation
+- the executable remote precision gate wrote `/home/pto/lean/artifacts/precision-gate/precision_gate_20260307T083727Z.json`
+- that gate currently recommends `bfloat16` as the active public-cuTile precision on `sm_121`
+- BF16 compiles and runs through the public `cuTile` path on the remote machine
+- the current float8 probe reaches the compiler but fails TileIR verification for both public FP8 dtypes
+- the narrower FP4 sub-gate remains blocked because the public `cuda.tile` frontend does not expose a complete FP4 authoring surface
 - the previous `Qwen3-32B BF16` borrowed and semantic runtime loops remain in the repo as legacy reference data, not the active first target
 - those legacy runs produced only about `2 tokens/s` on the remote GB10, which is not a credible starting point for a framework comparison
 
-The next hard gate is therefore narrower and stricter than before: compile and run one minimal FP4 kernel through the public cuTile-native chain, then map `Qwen3-8B-FP4` metadata, then rebuild the runtime around that smaller contract.
+The next hard gate is therefore different from the earlier FP4 pivot: own the `Qwen3-8B` BF16 checkpoint contract, rebuild the runtime around that smaller model, and only then benchmark against exact-format BF16 baselines.
 
 The deeper hypothesis is that, once compatibility is treated as optional instead of mandatory, an agent can spend a bounded token budget to generate a more direct and efficient software path for a specific model-chip pair.
 

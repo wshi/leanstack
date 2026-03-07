@@ -2,7 +2,7 @@
 
 The DGX Spark machine is accessed through `../remote.sh` and treated as the system-of-record for kernel validation.
 
-As of 2026-03-07, the `Qwen3-32B BF16` runtime validations below are legacy reference data. The active target has pivoted to `Qwen3-8B semantics + Qwen3-8B-FP4 artifact`, and the active first gate is FP4 compiler feasibility on `sm_121`.
+As of 2026-03-07, the `Qwen3-32B BF16` runtime validations below are legacy reference data. The active target has pivoted to `Qwen/Qwen3-8B` BF16, and the active first gate is the executable precision gate on `sm_121`.
 
 ## Remote layout
 
@@ -20,11 +20,12 @@ The scripts in this repo create and use:
 2. `./scripts/remote_sync.sh`
 3. `./scripts/remote_verify.sh`
 4. `./scripts/remote_fp4_inventory.sh`
-5. `./scripts/remote_fp4_gate.sh`
-6. `./scripts/remote_model_probe.sh`
-7. `MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_fetch.sh` for the semantic-base snapshot path
-8. `MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_baseline.sh`
-9. `./scripts/relay_url_to_remote.sh` or `./scripts/push_local_file_to_remote.sh` if the remote machine cannot download an artifact directly
+5. `./scripts/remote_precision_gate.sh`
+6. `./scripts/remote_fp4_gate.sh`
+7. `./scripts/remote_model_probe.sh`
+8. `MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_fetch.sh` for the semantic-base snapshot path
+9. `MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_baseline.sh`
+10. `./scripts/relay_url_to_remote.sh` or `./scripts/push_local_file_to_remote.sh` if the remote machine cannot download an artifact directly
 
 ## What `remote_verify.sh` checks
 
@@ -77,26 +78,31 @@ For a low-risk preflight, run:
 
 If ModelScope or PyPI becomes unreachable from the remote host, relay a wheel, archive, or extracted model directory from the Mac into `/home/pto/lean/models` and update the path file accordingly.
 
-For the active FP4 artifact target, relay may be required because the NVIDIA artifact path may not be reachable or mirrored through the same remote workflow.
-
-## FP4 gate status
+## Precision gate status
 
 Date confirmed: 2026-03-07
 
-Remote inspection confirms:
+The following command completed successfully on the remote machine:
 
-- `cuda.tile` version `1.1.0`
-- public dtype registry shows FP16, BF16, TF32, and FP8 entries
-- no visible public `FP4` or `NVFP4` dtype symbol in the installed Python frontend
-- `tileiras --help` includes `--gpu-name=sm_121`
+- `./scripts/remote_precision_gate.sh`
+
+Key confirmed facts:
+
+- artifact written to `/home/pto/lean/artifacts/precision-gate/precision_gate_20260307T083727Z.json`
+- gate status is `cleared`
+- recommended primary precision is `bfloat16`
+- BF16 compiles and runs through the public `cuTile` path on the remote machine
+- both public FP8 dtypes currently fail TileIR verification for the minimal float8 vector-add probe
+- the remote `tileiras` binary still reports `sm_121` coverage
 
 Interpretation:
 
 - backend targeting for GB10 is visible
-- public frontend FP4 coverage is still unproven
-- the next real validation task is a minimal FP4 compiler probe, not another large BF16 runtime run
+- BF16 is the active first precision for the repo
+- FP8 is visible in the frontend surface but not yet cleared for the current probe
+- FP4 still needs a separate negative sub-gate because the public frontend surface is incomplete
 
-## Latest FP4 gate result
+## FP4 sub-gate status
 
 Date confirmed: 2026-03-07
 
@@ -111,7 +117,7 @@ Key confirmed facts:
 - blocker is `public cuda.tile frontend does not expose a complete FP4 authoring surface`
 - backend still reports `sm_121` support in `tileiras`
 
-This means the repo now has an executable FP4 compiler gate. The current result is a real blocker, not just a planning note.
+This means the repo now has an executable FP4 compiler gate. The current result is a real blocker, not just a planning note, but it is no longer the active first-format target.
 
 ## Legacy runtime references
 
