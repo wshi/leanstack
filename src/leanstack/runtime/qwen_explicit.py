@@ -23,8 +23,18 @@ class QwenWeightIndex:
     @classmethod
     def load(cls, model_path: str | Path) -> "QwenWeightIndex":
         root = Path(model_path)
-        payload = json.loads((root / "model.safetensors.index.json").read_text(encoding="utf-8"))
-        return cls(model_path=root, weight_map=payload["weight_map"])
+        index_path = root / "model.safetensors.index.json"
+        if index_path.exists():
+            payload = json.loads(index_path.read_text(encoding="utf-8"))
+            return cls(model_path=root, weight_map=payload["weight_map"])
+
+        single_shard_path = root / "model.safetensors"
+        if not single_shard_path.exists():
+            raise FileNotFoundError(f"could not find {index_path.name} or {single_shard_path.name} under {root}")
+
+        with safe_open(single_shard_path, framework="pt", device="cpu") as handle:
+            weight_map = {tensor_name: single_shard_path.name for tensor_name in handle.keys()}
+        return cls(model_path=root, weight_map=weight_map)
 
     def shard_for(self, tensor_name: str) -> Path:
         return self.model_path / self.weight_map[tensor_name]
@@ -180,6 +190,10 @@ def qwen_output_tensor_names() -> tuple[str, ...]:
     return ("model.norm.weight", "lm_head.weight")
 
 
+def qwen_has_separate_lm_head(model_path: str | Path) -> bool:
+    return "lm_head.weight" in QwenWeightIndex.load(model_path).weight_map
+
+
 def resolve_layer_indices(
     config: Qwen3Config,
     layer_indices: tuple[int, ...] | None = None,
@@ -232,9 +246,10 @@ def _materialize_qwen_output_head(
 ) -> tuple[Qwen3RMSNorm, torch.nn.Linear]:
     final_norm = Qwen3RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
     lm_head = torch.nn.Linear(config.hidden_size, config.vocab_size, bias=False)
-    staged = stage_tensors_to_cpu(model_path, qwen_output_tensor_names())
+    lm_head_tensor_name = "lm_head.weight" if qwen_has_separate_lm_head(model_path) else "model.embed_tokens.weight"
+    staged = stage_tensors_to_cpu(model_path, ("model.norm.weight", lm_head_tensor_name))
     final_norm.weight.data.copy_(staged["model.norm.weight"].to(final_norm.weight.dtype))
-    lm_head.weight.data.copy_(staged["lm_head.weight"].to(lm_head.weight.dtype))
+    lm_head.weight.data.copy_(staged[lm_head_tensor_name].to(lm_head.weight.dtype))
     return (
         final_norm.to(device=target_device, dtype=torch_dtype),
         lm_head.to(device=target_device, dtype=torch_dtype),
@@ -431,9 +446,17 @@ def materialize_qwen_semantic_stack_runtime(
     final_norm_weight: torch.Tensor | None = None
     lm_head_weight: torch.Tensor | None = None
     if include_output_head:
-        staged = stage_tensors_to_cpu(model_path, qwen_output_tensor_names())
-        final_norm_weight = staged["model.norm.weight"].to(device=target_device, dtype=torch_dtype).contiguous()
-        lm_head_weight = staged["lm_head.weight"].to(device=target_device, dtype=torch_dtype).contiguous()
+        final_norm_weight = stage_tensors_to_cpu(model_path, ("model.norm.weight",))["model.norm.weight"].to(
+            device=target_device,
+            dtype=torch_dtype,
+        ).contiguous()
+        if qwen_has_separate_lm_head(model_path):
+            lm_head_weight = stage_tensors_to_cpu(model_path, ("lm_head.weight",))["lm_head.weight"].to(
+                device=target_device,
+                dtype=torch_dtype,
+            ).contiguous()
+        else:
+            lm_head_weight = embed_tokens_weight
 
     return QwenSemanticStackRuntime(
         model_path=Path(model_path),

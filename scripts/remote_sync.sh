@@ -12,7 +12,7 @@ source "$ROOT/scripts/remote_helpers.sh"
 
 load_remote_cmd "$REMOTE_SCRIPT"
 
-COPYFILE_DISABLE=1 tar \
+COPYFILE_DISABLE=1 COPY_EXTENDED_ATTRIBUTES_DISABLE=1 tar \
   --exclude='.git' \
   --exclude='.venv' \
   --exclude='.pycache' \

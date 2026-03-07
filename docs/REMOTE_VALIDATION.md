@@ -83,6 +83,49 @@ Confirmed on 2026-03-07:
 - metadata-only preflight for `Qwen/Qwen3-1.7B-Base` succeeded
 - path file written to `/home/pto/lean/models/Qwen__Qwen3-1.7B-Base.path`
 
+## Whole-model benchmark status
+
+Date confirmed: 2026-03-07
+
+The active full-model benchmark path now runs against the exact `Qwen/Qwen3-1.7B-Base` BF16 snapshot stored under `/home/pto/lean/models/Qwen/Qwen3-1___7B-Base`.
+
+Key confirmed facts:
+
+- the public ModelScope snapshot is a single-file checkpoint with `model.safetensors`, not a multi-shard HF index
+- the current loader now accepts both `model.safetensors.index.json` and single-file `model.safetensors` layouts
+- this checkpoint does not expose a separate `lm_head.weight`; the runtime now treats `model.embed_tokens.weight` as the tied output head
+- a local comparison UI is available on the Mac through `python3 scripts/serve_compare_ui.py --port 8787`
+- the UI now runs the two systems sequentially on the same remote GPU:
+  1. ensure `vLLM` is ready
+  2. run the `vLLM` benchmark
+  3. stop `vLLM`
+  4. run the `leanstack` benchmark
+
+Measured whole-model results so far:
+
+- `vLLM`, cold first request, `decode_64_256`:
+  - `ttft_seconds ≈ 18.15`
+  - `generated_tokens_per_second ≈ 10.94`
+- `vLLM`, warmed request on the same loaded service, `decode_64_256`:
+  - `ttft_seconds ≈ 0.253`
+  - `generated_tokens_per_second ≈ 46.43`
+  - `end_to_end_tokens_per_second ≈ 47.67`
+- `leanstack`, full semantic runtime, `decode_64_256`:
+  - `materialize_seconds ≈ 15.80`
+  - `prefill_seconds ≈ 0.594`
+  - `runtime_tokens_per_second ≈ 29.95`
+  - `full_loop_tokens_per_second ≈ 29.85`
+- `UI smoke`, `max_new_tokens=16`:
+  - `vLLM generated_tokens_per_second ≈ 10.56`
+  - `leanstack runtime_tokens_per_second ≈ 14.64`
+
+Interpretation:
+
+- the active specialized runtime is now real enough to run a full 28-layer model on the target GB10
+- the current `leanstack` path already beats the cold first-request framework path and a short `16-token` UI smoke
+- the current `leanstack` path does not yet beat warmed `vLLM` on the main `decode_64_256` profile
+- the next performance work should therefore focus on steady-state decode throughput, not just correctness or cold-start ownership
+
 ## Stage 1 hot-kernel status
 
 Date confirmed: 2026-03-07

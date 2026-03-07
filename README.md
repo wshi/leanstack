@@ -126,6 +126,11 @@ Current facts:
 - the latest Stage 1 remote artifact is `/home/pto/lean/artifacts/hot-kernels/20260307T094320Z`
 - current Stage 1 winners are `q_proj`, `o_proj`, `gate_up`, and `rmsnorm`; `kv_proj` and `down_proj` are still behind the local torch reference
 - a metadata-only remote fetch for `Qwen/Qwen3-1.7B-Base` succeeded and wrote `/home/pto/lean/models/Qwen__Qwen3-1.7B-Base.path`
+- the full `Qwen3-1.7B-Base` semantic runtime loop now runs end to end on GB10 from the single-file ModelScope checkpoint
+- on `decode_64_256`, the current full-model `leanstack` result is about `29.95 runtime tok/s`, `0.594s prefill`, and `15.8s` materialization
+- on the same profile, the first cold `vLLM` request measured about `10.94 tok/s` with `18.15s` TTFT, but the warmed `vLLM` request reached about `46.43 tok/s` with `0.253s` TTFT
+- this means the current specialized stack wins the short `16-token` UI smoke, but it still loses the warmed long decode baseline on the main `decode_64_256` profile
+- a local side-by-side UI is available through `python3 scripts/serve_compare_ui.py --port 8787`, then `http://127.0.0.1:8787`
 - the current float8 probe reaches the compiler but fails TileIR verification for both public FP8 dtypes
 - the narrower FP4 sub-gate remains blocked because the public `cuda.tile` frontend does not expose a complete FP4 authoring surface
 - the previous `Qwen3-32B BF16` borrowed and semantic runtime loops remain in the repo as legacy reference data, not the active first target

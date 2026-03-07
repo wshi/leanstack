@@ -14,6 +14,8 @@ API_KEY="${API_KEY:-EMPTY}"
 REQUEST_TIMEOUT="${REQUEST_TIMEOUT:-600}"
 RESULT_DIR="${RESULT_DIR:-$REMOTE_HOME/benchmarks}"
 BENCHMARK_TAG="${BENCHMARK_TAG:-}"
+PROMPT_OVERRIDE="${PROMPT_OVERRIDE:-}"
+MAX_NEW_TOKENS_OVERRIDE="${MAX_NEW_TOKENS_OVERRIDE:-}"
 source "$ROOT/scripts/remote_helpers.sh"
 
 "$ROOT/scripts/remote_sync.sh"
@@ -22,6 +24,8 @@ load_remote_cmd "$REMOTE_SCRIPT"
 COMMAND="set -euo pipefail; \
 export PYTHONPATH=/home/pto/lean/repo/src; \
 eval \"\$(python3 -m leanstack.cli show-benchmark-profile --profile \"$PROFILE\" --format shell)\"; \
+if [[ -n \"$PROMPT_OVERRIDE\" ]]; then PROMPT=\"$PROMPT_OVERRIDE\"; fi; \
+if [[ -n \"$MAX_NEW_TOKENS_OVERRIDE\" ]]; then MAX_NEW_TOKENS=\"$MAX_NEW_TOKENS_OVERRIDE\"; fi; \
 mkdir -p \"$RESULT_DIR\"; \
 if [[ -z \"$BENCHMARK_TAG\" ]]; then BENCHMARK_TAG=\$(date -u +%Y%m%dT%H%M%SZ); fi; \
 OUTPUT_PATH=\"$RESULT_DIR/${SYSTEM_LABEL}_${VARIANT_LABEL}_${PROFILE}_\${BENCHMARK_TAG}.json\"; \

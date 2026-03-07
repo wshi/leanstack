@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>leanstack Compare UI</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <p class="eyebrow">GB10 / Qwen3-1.7B-Base</p>
+        <h1>Directly compare <span>leanstack</span> against <span>vLLM</span>.</h1>
+        <p class="lede">
+          This UI triggers the same remote benchmark path for both systems, then shows prompt output, TTFT, and
+          tokens-per-second side by side.
+        </p>
+      </section>
+
+      <section class="status-bar">
+        <div class="status-card">
+          <div class="status-label">Model Download</div>
+          <div id="download-status" class="status-value muted">Checking…</div>
+        </div>
+        <div class="status-card">
+          <div class="status-label">Remote vLLM</div>
+          <div id="vllm-status" class="status-value muted">Unknown</div>
+        </div>
+        <div class="status-card">
+          <div class="status-label">Model Size</div>
+          <div id="model-size" class="status-value muted">-</div>
+        </div>
+      </section>
+
+      <section class="controls">
+        <label class="field">
+          <span>Prompt</span>
+          <textarea id="prompt-input" rows="7">Explain how fixing the Qwen3-1.7B-Base and GB10 contract can let an agent build a smaller and faster inference path than a compatibility-heavy framework.</textarea>
+        </label>
+        <div class="control-row">
+          <label class="field">
+            <span>Profile</span>
+            <select id="profile-input">
+              <option value="decode_64_256">decode_64_256</option>
+              <option value="decode_64_512">decode_64_512</option>
+              <option value="prefill_1024_64">prefill_1024_64</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Max New Tokens Override</span>
+            <input id="max-new-tokens-input" type="number" min="1" step="1" placeholder="Use profile default" />
+          </label>
+        </div>
+        <div class="actions">
+          <button id="refresh-status-button" class="button secondary">Refresh Status</button>
+          <button id="start-vllm-button" class="button secondary">Start vLLM</button>
+          <button id="compare-button" class="button primary">Run Side-by-Side</button>
+        </div>
+        <div id="activity-log" class="activity-log">Idle.</div>
+      </section>
+
+      <section class="delta-strip">
+        <div class="delta-card">
+          <div class="delta-label">Throughput Ratio</div>
+          <div id="throughput-ratio" class="delta-value">-</div>
+        </div>
+        <div class="delta-card">
+          <div class="delta-label">leanstack Prefill / vLLM TTFT</div>
+          <div id="latency-ratio" class="delta-value">-</div>
+        </div>
+      </section>
+
+      <section class="panel-grid">
+        <article class="panel">
+          <header class="panel-header">
+            <h2>vLLM</h2>
+            <p class="panel-subtitle">OpenAI-compatible remote benchmark</p>
+          </header>
+          <div class="metrics">
+            <div class="metric">
+              <span>TTFT</span>
+              <strong id="vllm-ttft">-</strong>
+            </div>
+            <div class="metric">
+              <span>Decode tok/s</span>
+              <strong id="vllm-tps">-</strong>
+            </div>
+            <div class="metric">
+              <span>End-to-end tok/s</span>
+              <strong id="vllm-e2e">-</strong>
+            </div>
+          </div>
+          <pre id="vllm-output" class="output">No run yet.</pre>
+        </article>
+
+        <article class="panel">
+          <header class="panel-header">
+            <h2>leanstack</h2>
+            <p class="panel-subtitle">Explicit semantic runtime loop on the same remote box</p>
+          </header>
+          <div class="metrics">
+            <div class="metric">
+              <span>Prefill</span>
+              <strong id="leanstack-prefill">-</strong>
+            </div>
+            <div class="metric">
+              <span>Runtime tok/s</span>
+              <strong id="leanstack-tps">-</strong>
+            </div>
+            <div class="metric">
+              <span>Full-loop tok/s</span>
+              <strong id="leanstack-e2e">-</strong>
+            </div>
+          </div>
+          <pre id="leanstack-output" class="output">No run yet.</pre>
+        </article>
+      </section>
+    </main>
+    <script src="/app.js" type="module"></script>
+  </body>
+  </html>

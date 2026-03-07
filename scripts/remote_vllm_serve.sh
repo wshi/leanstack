@@ -5,6 +5,7 @@ set -o pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REMOTE_SCRIPT="${REMOTE_SCRIPT:-$ROOT/../remote.sh}"
 REMOTE_HOME="${REMOTE_HOME:-/home/pto/lean}"
+REMOTE_REPO="${REMOTE_REPO:-$REMOTE_HOME/repo}"
 VLLM_VENV="${VLLM_VENV:-$REMOTE_HOME/venv-vllm}"
 MODEL_ID="${MODEL_ID:-Qwen/Qwen3-1.7B-Base}"
 MODEL_KEY="${MODEL_ID//\//__}"
@@ -18,12 +19,21 @@ MAX_MODEL_LEN="${MAX_MODEL_LEN:-4096}"
 SERVED_MODEL_NAME="${SERVED_MODEL_NAME:-qwen3-1.7b-base}"
 LOG_DIR="${LOG_DIR:-$REMOTE_HOME/logs}"
 WAIT_SECONDS="${WAIT_SECONDS:-180}"
+PYTHON_DEV_ROOT="${PYTHON_DEV_ROOT:-$REMOTE_HOME/tmp/pydev_probe/extracted}"
 source "$ROOT/scripts/remote_helpers.sh"
 
 load_remote_cmd "$REMOTE_SCRIPT"
 
 COMMAND="set -euo pipefail; \
 source \"$VLLM_VENV/bin/activate\"; \
+if [[ -f \"$PYTHON_DEV_ROOT/usr/include/python3.12/Python.h\" ]]; then \
+  export LEANSTACK_PYTHON_DEV_ROOT=\"$PYTHON_DEV_ROOT\"; \
+  export PYTHONPATH=\"$REMOTE_REPO/runtime_support:\${PYTHONPATH:-}\"; \
+  export CPATH=\"$PYTHON_DEV_ROOT/usr/include/python3.12:$PYTHON_DEV_ROOT/usr/include/aarch64-linux-gnu/python3.12:\${CPATH:-}\"; \
+  export C_INCLUDE_PATH=\"$PYTHON_DEV_ROOT/usr/include/python3.12:$PYTHON_DEV_ROOT/usr/include/aarch64-linux-gnu/python3.12:\${C_INCLUDE_PATH:-}\"; \
+  export CPLUS_INCLUDE_PATH=\"$PYTHON_DEV_ROOT/usr/include/python3.12:$PYTHON_DEV_ROOT/usr/include/aarch64-linux-gnu/python3.12:\${CPLUS_INCLUDE_PATH:-}\"; \
+  export LIBRARY_PATH=\"$PYTHON_DEV_ROOT/usr/lib/aarch64-linux-gnu:\${LIBRARY_PATH:-}\"; \
+fi; \
 MODEL_REF=\"$MODEL_PATH\"; \
 if [[ -z \"\$MODEL_REF\" ]]; then MODEL_REF=\$(<\"$MODEL_PATH_FILE\"); fi; \
 mkdir -p \"$LOG_DIR\"; \

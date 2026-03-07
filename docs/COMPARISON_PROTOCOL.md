@@ -140,3 +140,24 @@ Do not make a positive performance claim unless all of the following are true:
 2. the decisive hot kernels are on the cuTile path
 3. the runtime slices are stable and GPU-resident
 4. the full-model result beats at least one framework on a key throughput metric without hiding a major memory or complexity regression
+
+## First measured outcome
+
+Date confirmed: 2026-03-07
+
+The first exact-checkpoint whole-model data point now exists for `Qwen/Qwen3-1.7B-Base` on the remote GB10:
+
+- warmed `vLLM` on `decode_64_256`: about `46.43 generated tok/s`
+- current `leanstack` semantic full runtime on `decode_64_256`: about `29.95 runtime tok/s`
+
+So the benchmark-first conclusion is currently negative for the main steady-state decode target:
+
+- the specialized stack has not yet cleared the warmed-framework throughput bar
+- it is therefore not enough to say that ownership is solved; the next work must target steady-state decode speed directly
+
+The current repo still has positive intermediate evidence:
+
+- cold first-request `vLLM` is much slower than the loaded specialized loop
+- the `16-token` UI smoke also favors `leanstack`
+
+But those are not the deciding metrics for the main claim. The deciding metric remains warmed full-model decode throughput.

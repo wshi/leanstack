@@ -16,6 +16,10 @@ DEVICE="${DEVICE:-cuda:0}"
 DTYPE="${DTYPE:-bfloat16}"
 RESULT_DIR="${RESULT_DIR:-$REMOTE_HOME/benchmarks}"
 BENCHMARK_TAG="${BENCHMARK_TAG:-}"
+PROMPT_OVERRIDE="${PROMPT_OVERRIDE:-}"
+PROMPT_FORMAT_OVERRIDE="${PROMPT_FORMAT_OVERRIDE:-}"
+MAX_PREFILL_TOKENS_OVERRIDE="${MAX_PREFILL_TOKENS_OVERRIDE:-}"
+MAX_NEW_TOKENS_OVERRIDE="${MAX_NEW_TOKENS_OVERRIDE:-}"
 source "$ROOT/scripts/remote_helpers.sh"
 
 "$ROOT/scripts/remote_sync.sh"
@@ -27,6 +31,10 @@ export PYTHONPATH=/home/pto/lean/repo/src; \
 MODEL_REF=\"$MODEL_PATH\"; \
 if [[ -z \"\$MODEL_REF\" ]]; then MODEL_REF=\$(<\"$MODEL_PATH_FILE\"); fi; \
 eval \"\$(python3 -m leanstack.cli show-benchmark-profile --profile \"$PROFILE\" --format shell)\"; \
+if [[ -n \"$PROMPT_OVERRIDE\" ]]; then PROMPT=\"$PROMPT_OVERRIDE\"; fi; \
+if [[ -n \"$PROMPT_FORMAT_OVERRIDE\" ]]; then PROMPT_FORMAT=\"$PROMPT_FORMAT_OVERRIDE\"; fi; \
+if [[ -n \"$MAX_PREFILL_TOKENS_OVERRIDE\" ]]; then MAX_PREFILL_TOKENS=\"$MAX_PREFILL_TOKENS_OVERRIDE\"; fi; \
+if [[ -n \"$MAX_NEW_TOKENS_OVERRIDE\" ]]; then MAX_NEW_TOKENS=\"$MAX_NEW_TOKENS_OVERRIDE\"; fi; \
 mkdir -p \"$RESULT_DIR\"; \
 if [[ -z \"$BENCHMARK_TAG\" ]]; then BENCHMARK_TAG=\$(date -u +%Y%m%dT%H%M%SZ); fi; \
 OUTPUT_PATH=\"$RESULT_DIR/leanstack_${RUNTIME_MODE}_${PROFILE}_\${BENCHMARK_TAG}.json\"; \
