@@ -9,17 +9,23 @@ from leanstack.config import ModelSpec
 class ModelGeometry:
     num_hidden_layers: int
     hidden_size: int
+    intermediate_size: int
     num_attention_heads: int
     num_key_value_heads: int
     head_dim: int
+    vocab_size: int
+    max_position_embeddings: int
 
     def render(self) -> tuple[str, ...]:
         return (
             f"layers={self.num_hidden_layers}",
             f"hidden_size={self.hidden_size}",
+            f"intermediate_size={self.intermediate_size}",
             f"attention_heads={self.num_attention_heads}",
             f"kv_heads={self.num_key_value_heads}",
             f"head_dim={self.head_dim}",
+            f"vocab_size={self.vocab_size}",
+            f"max_position_embeddings={self.max_position_embeddings}",
         )
 
 
@@ -89,18 +95,24 @@ def _geometry_from_model(model: ModelSpec) -> ModelGeometry | None:
     values = (
         model.num_hidden_layers,
         model.hidden_size,
+        model.intermediate_size,
         model.num_attention_heads,
         model.num_key_value_heads,
         model.head_dim,
+        model.vocab_size,
+        model.max_position_embeddings,
     )
     if any(value is None for value in values):
         return None
     return ModelGeometry(
         num_hidden_layers=model.num_hidden_layers or 0,
         hidden_size=model.hidden_size or 0,
+        intermediate_size=model.intermediate_size or 0,
         num_attention_heads=model.num_attention_heads or 0,
         num_key_value_heads=model.num_key_value_heads or 0,
         head_dim=model.head_dim or 0,
+        vocab_size=model.vocab_size or 0,
+        max_position_embeddings=model.max_position_embeddings or 0,
     )
 
 

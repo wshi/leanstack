@@ -20,6 +20,8 @@ COPYFILE_DISABLE=1 tar \
   --exclude='.pytest_cache' \
   --exclude='*.pyc' \
   --exclude='artifacts' \
+  --exclude='.DS_Store' \
+  --exclude='._*' \
   -C "$ROOT" \
   -cf - \
   . | "${REMOTE_CMD[@]}" "mkdir -p '$REMOTE_REPO' && tar -xf - -C '$REMOTE_REPO'"

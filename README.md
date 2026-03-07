@@ -50,6 +50,7 @@ Stage 0 in this repo does five concrete things:
 - `experiments/cutile/torch_vector_add.py`: torch-backed minimal dtype probe for BF16 and FP8 reachability.
 - `experiments/cutile/precision_gate.py`: executable BF16 / FP8 / FP4 precision-gate probe for the current public cuTile install.
 - `experiments/cutile/fp4_compiler_gate.py`: executable FP4 compiler-gate probe for the current public cuTile install.
+- `experiments/cutile/qwen_bf16_hot_kernels.py`: BF16 hot-kernel microbench suite for the exact Qwen3-1.7B geometry.
 - `experiments/models/hf_causal_lm_smoke.py`: baseline Hugging Face causal LM smoke path.
 - `experiments/models/qwen_explicit_block_probe.py`: explicit Qwen loader and layer-0 block/prefill/decode probe.
 - `experiments/models/qwen_explicit_stack_probe.py`: explicit multi-layer Qwen stack probe.
@@ -66,6 +67,7 @@ From `/Users/wei/work/spark/leanstack`:
 ```bash
 PYTHONPATH=src python3 -m leanstack.cli show-plan
 PYTHONPATH=src python3 -m leanstack.cli show-comparison-plan
+PYTHONPATH=src python3 -m leanstack.cli list-hot-kernel-cases --default-only
 PYTHONPATH=src python3 -m leanstack.cli remote-env
 PYTHONPATH=src python3 -m leanstack.cli show-contract --model qwen
 PYTHONPATH=src python3 -m leanstack.cli show-gaps --model qwen
@@ -75,6 +77,7 @@ PYTHONPATH=src python3 -m leanstack.cli show-gaps --model qwen
 ./scripts/remote_fp4_inventory.sh
 ./scripts/remote_precision_gate.sh
 ./scripts/remote_fp4_gate.sh
+./scripts/remote_qwen_hot_kernel_bench.sh
 ./scripts/remote_model_probe.sh
 MODEL_ID=Qwen/Qwen3-1.7B-Base ./scripts/remote_qwen_fetch.sh
 MODEL_ID=Qwen/Qwen3-1.7B-Base ./scripts/remote_qwen_baseline.sh
@@ -119,13 +122,16 @@ Current facts:
 - the executable remote precision gate wrote `/home/pto/lean/artifacts/precision-gate/precision_gate_20260307T083727Z.json`
 - that gate currently recommends `bfloat16` as the active public-cuTile precision on `sm_121`
 - BF16 compiles and runs through the public `cuTile` path on the remote machine
+- the repo now defines an executable Stage 1 hot-kernel bundle for `Qwen3-1.7B-Base` BF16: `q_proj`, `kv_proj`, `o_proj`, `gate/up`, `down`, and `rmsnorm`
+- the latest Stage 1 remote artifact is `/home/pto/lean/artifacts/hot-kernels/20260307T094320Z`
+- current Stage 1 winners are `q_proj`, `o_proj`, `gate_up`, and `rmsnorm`; `kv_proj` and `down_proj` are still behind the local torch reference
 - a metadata-only remote fetch for `Qwen/Qwen3-1.7B-Base` succeeded and wrote `/home/pto/lean/models/Qwen__Qwen3-1.7B-Base.path`
 - the current float8 probe reaches the compiler but fails TileIR verification for both public FP8 dtypes
 - the narrower FP4 sub-gate remains blocked because the public `cuda.tile` frontend does not expose a complete FP4 authoring surface
 - the previous `Qwen3-32B BF16` borrowed and semantic runtime loops remain in the repo as legacy reference data, not the active first target
 - those legacy runs produced only about `2 tokens/s` on the remote GB10, which is not a credible starting point for a framework comparison
 
-The next hard gate is therefore different from the earlier FP4 pivot: own the `Qwen3-1.7B-Base` BF16 checkpoint contract, rebuild the runtime around that smaller model, and only then benchmark against exact-format BF16 baselines.
+The next hard gate is therefore: keep the BF16 hot-kernel suite green through `cuTile -> TileIR -> cubin -> SASS`, then use those kernels to drive the first meaningful whole-network benchmark table.
 
 The deeper hypothesis is that, once compatibility is treated as optional instead of mandatory, an agent can spend a bounded token budget to generate a more direct and efficient software path for a specific model-chip pair.
 

@@ -50,6 +50,7 @@ Target:
 
 Deliverables:
 
+- executable Stage 1 hot-kernel suite on the exact 1.7B geometry
 - BF16-aware weight loader
 - tokenizer wiring
 - tensor layout adapter
@@ -92,5 +93,5 @@ Exit gate:
 
 1. Retarget the active runtime from the legacy `Qwen3-32B` work to `Qwen3-1.7B-Base` BF16.
 2. Separate `Qwen3-1.7B-Base` semantic ownership from BF16 checkpoint ownership.
-3. Define the exact-format BF16 benchmark contract before rebuilding the larger runtime.
+3. Lift the hot-kernel wins from `q_proj/o_proj/gate_up/rmsnorm` into a real runtime slice and close the `kv_proj/down_proj` gap.
 4. Keep the legacy `Qwen3-32B BF16` path as reference data only, not as the active optimization target.

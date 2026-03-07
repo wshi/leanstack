@@ -93,6 +93,10 @@ The key engineering task is:
 
 - Current:
   - BF16 compiles through the public `cuTile` path for the minimal probe
+  - a first executable BF16 hot-kernel bundle now runs on the exact `Qwen3-1.7B-Base` geometry
+  - `q_proj`, `o_proj`, `gate_up`, and `rmsnorm` already beat or match the local torch reference on GB10
+  - `kv_proj` and `down_proj` are still underperforming
+  - mixed tile shapes required tile-shape-specific kernel objects; a single reused generic `ct.kernel` was not safe
   - the old dense Qwen path still relies on eager PyTorch math for its active semantics
 - Target:
   - a small `Qwen3-1.7B-Base` BF16 kernel catalog exists for:

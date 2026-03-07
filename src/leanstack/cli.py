@@ -8,6 +8,7 @@ from pathlib import Path
 from .benchmark import get_benchmark_profile, list_benchmark_profiles
 from .comparison import render_comparison_plan
 from .gap_registry import get_gap_report
+from .hot_kernels import get_hot_kernel_case, list_hot_kernel_cases
 from .model_registry import get_model_spec, list_models
 from .plan import render_plan
 from .remote import default_remote_script, parse_remote_script, run_remote_bash
@@ -43,6 +44,15 @@ def build_parser() -> argparse.ArgumentParser:
     bench_profile.add_argument("--profile", default="decode_64_256")
     bench_profile.add_argument("--format", choices=("text", "json", "shell"), default="text")
     bench_profile.set_defaults(handler=handle_show_benchmark_profile)
+
+    hot_cases = subparsers.add_parser("list-hot-kernel-cases", help="List supported cuTile hot-kernel cases.")
+    hot_cases.add_argument("--default-only", action="store_true")
+    hot_cases.set_defaults(handler=handle_list_hot_kernel_cases)
+
+    hot_case = subparsers.add_parser("show-hot-kernel-case", help="Print one cuTile hot-kernel case.")
+    hot_case.add_argument("--case", default="q_proj_prefill64")
+    hot_case.add_argument("--format", choices=("text", "json", "shell"), default="text")
+    hot_case.set_defaults(handler=handle_show_hot_kernel_case)
 
     remote_env = subparsers.add_parser("remote-env", help="Probe the configured remote environment.")
     remote_env.add_argument("--remote-script", type=Path, default=default_remote_script())
@@ -93,6 +103,23 @@ def handle_show_benchmark_profile(args: argparse.Namespace) -> int:
         print(profile.render_shell())
     else:
         print(profile.render())
+    return 0
+
+
+def handle_list_hot_kernel_cases(args: argparse.Namespace) -> int:
+    for case in list_hot_kernel_cases(default_only=args.default_only):
+        print(case.render())
+    return 0
+
+
+def handle_show_hot_kernel_case(args: argparse.Namespace) -> int:
+    case = get_hot_kernel_case(args.case)
+    if args.format == "json":
+        print(case.render_json())
+    elif args.format == "shell":
+        print(case.render_shell())
+    else:
+        print(case.render())
     return 0
 
 

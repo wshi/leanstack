@@ -83,6 +83,46 @@ Confirmed on 2026-03-07:
 - metadata-only preflight for `Qwen/Qwen3-1.7B-Base` succeeded
 - path file written to `/home/pto/lean/models/Qwen__Qwen3-1.7B-Base.path`
 
+## Stage 1 hot-kernel status
+
+Date confirmed: 2026-03-07
+
+The following command completed successfully on the remote machine:
+
+- `./scripts/remote_qwen_hot_kernel_bench.sh`
+
+Key confirmed facts:
+
+- artifact written to `/home/pto/lean/artifacts/hot-kernels/20260307T094320Z`
+- `.cutile`, `cubin`, and SASS artifacts were emitted for the BF16 hot-kernel suite
+- active default bundle:
+  - `q_proj_prefill64`
+  - `kv_proj_prefill64`
+  - `o_proj_prefill64`
+  - `gate_up_proj_prefill64`
+  - `down_proj_prefill64`
+  - `rmsnorm_prefill64`
+
+Measured medians against local torch references:
+
+- `q_proj_prefill64`: `20.01 TFLOPS` vs `17.28 TFLOPS`, `1.16x`
+- `kv_proj_prefill64`: `10.05 TFLOPS` vs `16.09 TFLOPS`, `0.62x`
+- `o_proj_prefill64`: `20.14 TFLOPS` vs `16.87 TFLOPS`, `1.19x`
+- `gate_up_proj_prefill64`: `22.29 TFLOPS` vs `20.36 TFLOPS`, `1.09x`
+- `down_proj_prefill64`: `6.34 TFLOPS` vs `19.19 TFLOPS`, `0.33x`
+- `rmsnorm_prefill64`: `0.0795 TFLOPS` vs `0.0152 TFLOPS`, `5.23x`
+
+Important implementation note:
+
+- a single generic `ct.kernel` reused across multiple tile shapes produced incorrect `down_proj` results in a mixed suite
+- the current repo now generates tile-shape-specific kernel objects, which makes `down_proj_prefill64` correct again in the shared benchmark run
+
+Interpretation:
+
+- the public BF16 path is already competitive on `q_proj`, `o_proj`, `gate_up`, and `rmsnorm`
+- `kv_proj` and especially `down_proj` are still below the torch reference and remain active optimization targets
+- this is now a real backend profile, not just a planning assumption
+
 ## Precision gate status
 
 Date confirmed: 2026-03-07

@@ -10,6 +10,15 @@ The benchmark is not only about runtime speed.
 
 It is also about whether agent-generated, model-chip-specific software can replace a significant amount of compatibility-oriented stack complexity.
 
+The first live throughput gate is not the full model. It is a fixed hot-kernel bundle on the exact 1.7B geometry:
+
+- `q_proj_prefill64`
+- `kv_proj_prefill64`
+- `o_proj_prefill64`
+- `gate_up_proj_prefill64`
+- `down_proj_prefill64`
+- `rmsnorm_prefill64`
+
 ## Primary systems under test
 
 - `leanstack`

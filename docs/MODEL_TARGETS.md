@@ -26,8 +26,10 @@ Validated semantic configuration snapshot from the public `Qwen/Qwen3-1.7B-Base`
 
 - 28 layers
 - hidden size 2048
+- intermediate size 6144
 - 16 attention heads and 8 KV heads
 - head dimension 128
+- vocab size 151936
 - 32768 context length
 - grouped-query attention
 - Qwen3 chat / thinking controls remain part of the tokenizer or prompt contract, not the core kernel contract

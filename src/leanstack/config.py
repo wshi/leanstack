@@ -24,9 +24,12 @@ class ModelSpec:
     artifact_model_id: str | None = None
     num_hidden_layers: int | None = None
     hidden_size: int | None = None
+    intermediate_size: int | None = None
     num_attention_heads: int | None = None
     num_key_value_heads: int | None = None
     head_dim: int | None = None
+    vocab_size: int | None = None
+    max_position_embeddings: int | None = None
     target_gpu: str | None = None
     remote_model_key: str | None = None
     compile_gate: str | None = None

@@ -15,9 +15,12 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         artifact_model_id="Qwen/Qwen3-1.7B-Base",
         num_hidden_layers=28,
         hidden_size=2048,
+        intermediate_size=6144,
         num_attention_heads=16,
         num_key_value_heads=8,
         head_dim=128,
+        vocab_size=151936,
+        max_position_embeddings=32768,
         target_gpu="GB10 / sm_121",
         remote_model_key="Qwen__Qwen3-1.7B-Base",
         compile_gate=(
@@ -49,7 +52,7 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
             "bring up prefill and decode with explicit KV reuse",
         ),
         static_contract=(
-            "Model semantics are fixed to Qwen3-1.7B-Base with 28 layers, hidden size 2048, and GQA geometry 16Q/8KV/128.",
+            "Model semantics are fixed to Qwen3-1.7B-Base with 28 layers, hidden size 2048, intermediate size 6144, and GQA geometry 16Q/8KV/128.",
             "Deployment target is fixed to the public Qwen3-1.7B-Base BF16 checkpoint on GB10 / sm_121.",
             "Only the user request is intended to stay dynamic; model geometry, precision policy, kernel inventory, and dispatch order should be fixed by the model-chip contract.",
             "KV page layout, RoPE policy, BF16 linear strategy, and MLP fusion rules are fixed by the adapter.",

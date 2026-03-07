@@ -67,6 +67,20 @@ The decisive kernels should be benchmarked before the full-model claim:
 - RoPE
 - decode attention
 
+First executable bundle for `Qwen3-1.7B-Base` BF16:
+
+- `q_proj_prefill64`
+- `kv_proj_prefill64`
+- `o_proj_prefill64`
+- `gate_up_proj_prefill64`
+- `down_proj_prefill64`
+- `rmsnorm_prefill64`
+
+Execution path:
+
+- `PYTHONPATH=src python3 -m leanstack.cli list-hot-kernel-cases --default-only`
+- `./scripts/remote_qwen_hot_kernel_bench.sh`
+
 Comparison rule:
 
 - compare each cuTile kernel against the closest local torch reference for the exact tensor shape
