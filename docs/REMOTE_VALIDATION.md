@@ -104,3 +104,28 @@ Key confirmed facts:
 - GPU allocation after materialization was about `65.5 GiB`
 
 This confirms that the repo has crossed from a multi-layer probe into a full-model, single-request runtime loop, even though the loop still borrows layer semantics and cache behavior from `transformers`.
+
+## Latest confirmed semantic block result
+
+Date confirmed: 2026-03-07
+
+The following command completed successfully on the remote GB10 machine:
+
+```bash
+python3 experiments/models/qwen_semantic_block_probe.py \
+  --model-path /home/pto/lean/models/Qwen/Qwen3-32B \
+  --layer-idx 0 \
+  --device cuda:0 \
+  --max-prefill-tokens 8 \
+  --disable-thinking
+```
+
+Key confirmed facts:
+
+- the adapter-owned semantic block and the borrowed block produced the same cache sequence length: `9`
+- the new page-based KV manager reported `page_size=16`, `used_pages=1`, `seq_len=9`
+- forward `max_abs_diff` was `0.03125`
+- prefill `max_abs_diff` was `0.03125`
+- decode `max_abs_diff` was `0.125`
+
+This is the first remote proof that `leanstack` can begin replacing borrowed Qwen layer semantics and `DynamicCache` with its own explicit control surface while staying numerically close to the reference path.

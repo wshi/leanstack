@@ -46,6 +46,7 @@ Stage 0 in this repo does four concrete things:
 - `experiments/models/qwen_explicit_block_probe.py`: explicit Qwen loader and layer-0 block/prefill/decode probe.
 - `experiments/models/qwen_explicit_stack_probe.py`: explicit multi-layer Qwen stack probe.
 - `experiments/models/qwen_explicit_runtime_loop.py`: explicit full-model runtime loop with greedy decode accounting.
+- `experiments/models/qwen_semantic_block_probe.py`: adapter-owned Qwen block semantics plus page-based KV cache probe.
 - `scripts/remote_*.sh`: remote bootstrap, sync, relay, probe, install, and smoke scripts.
 - `src/leanstack/`: Python control plane, planning, and repo utilities.
 - `skills/leanstack/`: English Codex skill for operating the stack.
@@ -67,6 +68,7 @@ PYTHONPATH=src python3 -m leanstack.cli show-gaps --model qwen
 ./scripts/remote_qwen_block_probe.sh
 ./scripts/remote_qwen_stack_probe.sh
 ./scripts/remote_qwen_runtime_loop.sh
+./scripts/remote_qwen_semantic_block_probe.sh
 ./scripts/remote_qwen_baseline.sh
 ```
 
@@ -102,6 +104,7 @@ As of 2026-03-07, the first milestone is a compiler-grounded vertical slice:
 - explicit layer-0 Qwen block/prefill/decode probe runs on the remote GB10 without `device_map=\"auto\"`
 - explicit multi-layer Qwen stack probe is now available, so the next extension can happen on the same runtime surface
 - explicit full-model Qwen runtime loop now runs across all 64 layers on the remote GB10, with approximately `65.6 GiB` allocated after materialization
+- adapter-owned layer-0 Qwen semantics now match the borrowed path closely enough to use as the next replacement wedge, and the first page-based KV manager is live in that probe
 - a structured gap registry now tracks the remaining code path from borrowed `transformers` semantics to `cuTile/TileIR` kernels on `sm_121`
 
 The next hard gate is replacing the borrowed `transformers` layer semantics and `DynamicCache` inside the now-working full-model runtime loop with adapter-owned operators, KV layout, and kernels, then benchmarking that path against framework baselines.

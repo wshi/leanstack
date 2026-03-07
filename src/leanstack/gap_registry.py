@@ -67,8 +67,9 @@ GAP_REGISTRY: dict[str, GapReport] = {
                 title="Replace borrowed Qwen semantics with adapter-owned operators",
                 status="in_progress",
                 current_state=(
-                    "The explicit path owns weight staging and device placement, but it still calls "
-                    "`Qwen3DecoderLayer`, `Qwen3RotaryEmbedding`, `Qwen3RMSNorm`, and `DynamicCache` from `transformers`."
+                    "The explicit path now has an adapter-owned layer-0 semantic block that reproduces the borrowed path "
+                    "closely for forward, prefill, and decode probes, but the active multi-layer and full-model execution paths "
+                    "still call `Qwen3DecoderLayer`, `Qwen3RotaryEmbedding`, `Qwen3RMSNorm`, and `DynamicCache` from `transformers`."
                 ),
                 target_state=(
                     "The Qwen adapter owns RMSNorm, RoPE, GQA attention, MLP, final norm, output projection, and cache semantics "
@@ -80,8 +81,7 @@ GAP_REGISTRY: dict[str, GapReport] = {
                     "experiments/models/qwen_explicit_stack_probe.py",
                 ),
                 next_step=(
-                    "Split `Qwen3DecoderLayer` into explicit adapter stages: input norm, QKV projections, rotary application, "
-                    "attention core, output projection, post-attention norm, and gated MLP."
+                    "Extend the validated layer-0 semantic block into a multi-layer stack, then replace the borrowed decoder path in the runtime loop."
                 ),
                 risk=(
                     "If the adapter boundary stays inside `transformers`, correctness remains easy but kernel substitution stays blocked."
@@ -110,9 +110,10 @@ GAP_REGISTRY: dict[str, GapReport] = {
             GapItem(
                 key="kv-cache",
                 title="Replace `DynamicCache` with a static paged KV manager",
-                status="missing",
+                status="in_progress",
                 current_state=(
-                    "Prefill and decode reuse `transformers.cache_utils.DynamicCache`, so cache layout and growth policy are still framework-owned."
+                    "A page-based KV manager now exists for the semantic block probe, but the active multi-layer and full-model loops still "
+                    "reuse `transformers.cache_utils.DynamicCache`."
                 ),
                 target_state=(
                     "The runtime owns a paged KV structure specialized for Qwen3-32B GQA geometry on GB10, including block allocation, "
@@ -123,7 +124,7 @@ GAP_REGISTRY: dict[str, GapReport] = {
                     "src/leanstack/runtime/engine.py",
                 ),
                 next_step=(
-                    "Define a first `KVPageLayout` and `KVBlockManager` API, then swap the stack probe from `DynamicCache` to explicit page buffers."
+                    "Thread the new `KVPageLayout` and `KVBlockManager` through the multi-layer stack, then remove `DynamicCache` from the full runtime loop."
                 ),
                 risk=(
                     "Attention kernels cannot become hardware-near while cache layout remains hidden behind a general-purpose framework cache."

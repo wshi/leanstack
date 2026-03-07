@@ -38,7 +38,8 @@ It is:
 
 - Current:
   - `leanstack` owns weight indexing, shard reads, and GPU placement.
-  - `transformers` still owns layer semantics.
+  - a new adapter-owned layer-0 semantic path now reproduces the borrowed block closely enough for forward, prefill, and decode probes.
+  - `transformers` still owns the active multi-layer and full-model execution path.
 - Target:
   - `leanstack` owns RMSNorm, RoPE, QKV projections, GQA attention, MLP, final norm, output projection, and sampler behavior.
 - Why this matters:
@@ -57,7 +58,8 @@ It is:
 ### 3. KV cache ownership
 
 - Current:
-  - the explicit stack still uses `DynamicCache`
+  - a new page-based KV manager exists for the semantic block probe
+  - the active multi-layer and full-model loops still use `DynamicCache`
 - Target:
   - a paged KV manager specialized to Qwen GQA geometry on `sm_121`
 - Why this matters:
