@@ -47,7 +47,8 @@ It is:
 ### 2. Full-model residency and layout
 
 - Current:
-  - layer probes materialize tensors explicitly but only in probe-sized slices
+  - the explicit runtime loop can now materialize all 64 Qwen3-32B layers, final norm, and output head onto GB10 GPU memory
+  - the current materialization path is still a probe-oriented, layer-by-layer staging flow rather than a production residency planner
 - Target:
   - a fixed `Qwen3-32B + GB10` residency plan for all 64 layers, plus deterministic KV layout
 - Why this matters:
@@ -93,9 +94,9 @@ It is:
 ### 6. Runtime loop
 
 - Current:
-  - probes validate one forward / prefill / decode path
+  - a deterministic, single-request, full 64-layer prefill/decode loop now runs on the remote machine with explicit greedy decode accounting
 - Target:
-  - a deterministic full 64-layer prefill/decode loop with explicit stop handling
+  - a small runtime loop performs deterministic single-request prefill/decode first, then expands to comparable batching rules for benchmark work
 - Why this matters:
   - only then does `tokens/s` comparison against `vLLM` or `SGLang` become meaningful
 
@@ -106,7 +107,7 @@ It is:
 3. bring up `RMSNorm`, `RoPE`, and sampler in cuTile first
 4. bring up GQA prefill/decode kernels
 5. package kernels as repeatable `sm_121` artifacts
-6. extend the explicit stack from 2 layers to all 64 layers
+6. turn the full single-request loop into a scheduler-ready runtime surface
 
 ## Compiler-path policy
 

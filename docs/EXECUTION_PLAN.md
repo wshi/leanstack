@@ -92,7 +92,7 @@ Exit gate:
 
 ## Current blockers to clear
 
-1. Extend the current explicit multi-layer probe into a full `Qwen/Qwen3-32B`, GPU-resident first path.
+1. Replace borrowed `Qwen3DecoderLayer` and `DynamicCache` semantics inside the working full-model loop with adapter-owned operators and KV layout.
 2. Translate the first transformer block into explicit kernel requirements instead of importing a monolithic runtime.
 3. Prepare official baseline configurations for `vLLM` and `SGLang` on the same machine and model profile.
 4. Define the first benchmark table format, including software-complexity and agent-cost proxies, before adding a larger serve surface.

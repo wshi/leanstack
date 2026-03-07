@@ -92,8 +92,8 @@ GAP_REGISTRY: dict[str, GapReport] = {
                 title="Turn per-layer staging into a full-model residency plan",
                 status="in_progress",
                 current_state=(
-                    "Weights are staged shard-by-shard from `safetensors` and materialized layer by layer onto GPU, "
-                    "which is good enough for probes but not yet a production execution layout."
+                    "The explicit runtime loop can now materialize all 64 Qwen3-32B layers plus the output head onto GB10 GPU memory, "
+                    "but the current path is still a probe-oriented layer-by-layer staging flow rather than a production residency planner."
                 ),
                 target_state=(
                     "A fixed Qwen3-32B + GB10 layout defines which tensors live permanently on GPU, how KV pages are allocated, "
@@ -177,23 +177,23 @@ GAP_REGISTRY: dict[str, GapReport] = {
             GapItem(
                 key="scheduler-and-loop",
                 title="Upgrade probes into a deterministic runtime loop",
-                status="missing",
+                status="in_progress",
                 current_state=(
-                    "The current probes validate one forward/prefill/decode path, but there is no explicit runtime loop for request admission, "
-                    "prefill scheduling, decode stepping, or stop handling."
+                    "A deterministic, single-request, full 64-layer runtime loop now runs on the remote machine with explicit greedy decode accounting, "
+                    "but it is still a script-level loop rather than a scheduler-ready runtime surface."
                 ),
                 target_state=(
                     "A small runtime loop performs deterministic single-request prefill/decode first, then expands to comparable batching rules for benchmark work."
                 ),
                 code_surface=(
                     "src/leanstack/runtime/engine.py",
-                    "experiments/models/qwen_explicit_stack_probe.py",
+                    "experiments/models/qwen_explicit_runtime_loop.py",
                 ),
                 next_step=(
-                    "Use the multi-layer probe as the seed of a full 64-layer decode loop, then add stop-token handling and greedy decode accounting."
+                    "Move the working full-model loop behind a runtime-owned request and scheduler surface, then add deterministic batching rules."
                 ),
                 risk=(
-                    "Benchmarking against vLLM or SGLang before this loop exists would mostly measure missing runtime surface, not the core compiler/runtime thesis."
+                    "Benchmarking against vLLM or SGLang before this loop becomes a real runtime surface would still measure missing scheduler and runtime features, not only kernel quality."
                 ),
             ),
         ),

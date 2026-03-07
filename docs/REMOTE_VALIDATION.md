@@ -19,8 +19,10 @@ The scripts in this repo create and use:
 3. `./scripts/remote_verify.sh`
 4. `./scripts/remote_model_probe.sh`
 5. `./scripts/remote_qwen_fetch.sh` for the primary model snapshot path
-6. `./scripts/remote_qwen_baseline.sh`
-7. `./scripts/relay_url_to_remote.sh` or `./scripts/push_local_file_to_remote.sh` if the remote machine cannot download an artifact directly
+6. `./scripts/remote_qwen_stack_probe.sh`
+7. `./scripts/remote_qwen_runtime_loop.sh`
+8. `./scripts/remote_qwen_baseline.sh`
+9. `./scripts/relay_url_to_remote.sh` or `./scripts/push_local_file_to_remote.sh` if the remote machine cannot download an artifact directly
 
 ## What `remote_verify.sh` checks
 
@@ -72,3 +74,33 @@ For a low-risk preflight, run:
 - `MODEL_ALLOW_PATTERN='*.json' ./scripts/remote_qwen_fetch.sh`
 
 If ModelScope or PyPI becomes unreachable from the remote host, relay a wheel, archive, or extracted model directory from the Mac into `/home/pto/lean/models` and update the path file accordingly.
+
+## Latest confirmed explicit runtime result
+
+Date confirmed: 2026-03-07
+
+The following command completed successfully on the remote GB10 machine:
+
+```bash
+python3 experiments/models/qwen_explicit_runtime_loop.py \
+  --model-path /home/pto/lean/models/Qwen/Qwen3-32B \
+  --num-layers 0 \
+  --device cuda:0 \
+  --max-prefill-tokens 8 \
+  --max-new-tokens 4 \
+  --disable-thinking
+```
+
+Key confirmed facts:
+
+- all `64` decoder layers were materialized
+- output head and final norm were included
+- `prompt_tokens=8`
+- `emitted_tokens=4`
+- `cache_seq_length=12`
+- materialization took about `76.7s`
+- runtime loop time was about `1.79s`
+- runtime-loop throughput was about `2.24 tokens/s`
+- GPU allocation after materialization was about `65.5 GiB`
+
+This confirms that the repo has crossed from a multi-layer probe into a full-model, single-request runtime loop, even though the loop still borrows layer semantics and cache behavior from `transformers`.

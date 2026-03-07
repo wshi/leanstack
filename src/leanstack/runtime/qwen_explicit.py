@@ -42,6 +42,7 @@ class QwenBlockRuntime:
 class QwenStackRuntime:
     model_path: Path
     config: Qwen3Config
+    layer_indices: tuple[int, ...]
     embed_tokens: torch.nn.Embedding
     layers: tuple[Qwen3DecoderLayer, ...]
     rotary: Qwen3RotaryEmbedding
@@ -49,6 +50,13 @@ class QwenStackRuntime:
     lm_head: torch.nn.Linear | None
     device: torch.device
     dtype: torch.dtype
+
+
+@dataclass(frozen=True)
+class QwenGenerationState:
+    generated_ids: torch.LongTensor
+    stop_reason: str
+    cache_seq_length: int
 
 
 def resolve_torch_dtype(name: str) -> torch.dtype:
@@ -109,6 +117,20 @@ def qwen_layer_tensor_names(layer_idx: int) -> tuple[str, ...]:
 
 def qwen_output_tensor_names() -> tuple[str, ...]:
     return ("model.norm.weight", "lm_head.weight")
+
+
+def resolve_layer_indices(
+    config: Qwen3Config,
+    layer_indices: tuple[int, ...] | None = None,
+) -> tuple[int, ...]:
+    if not layer_indices:
+        return tuple(range(config.num_hidden_layers))
+    for layer_idx in layer_indices:
+        if layer_idx < 0 or layer_idx >= config.num_hidden_layers:
+            raise ValueError(
+                f"layer index {layer_idx} out of range for num_hidden_layers={config.num_hidden_layers}"
+            )
+    return layer_indices
 
 
 def _materialize_embed_tokens(
@@ -186,19 +208,20 @@ def materialize_qwen_block_runtime(
 
 def materialize_qwen_stack_runtime(
     model_path: str | Path,
-    layer_indices: tuple[int, ...],
+    layer_indices: tuple[int, ...] | None = None,
     device: str | torch.device = "cuda:0",
     dtype: str | torch.dtype = "bfloat16",
     include_output_head: bool = False,
 ) -> QwenStackRuntime:
     config = load_qwen_config(model_path)
+    resolved_layer_indices = resolve_layer_indices(config, layer_indices)
     torch_dtype = resolve_torch_dtype(dtype) if isinstance(dtype, str) else dtype
     target_device = torch.device(device)
     embed_tokens = _materialize_embed_tokens(model_path, config, target_device, torch_dtype)
     rotary = Qwen3RotaryEmbedding(config).to(device=target_device)
     layers = tuple(
         _materialize_qwen_layer(model_path, config, layer_idx, target_device, torch_dtype)
-        for layer_idx in layer_indices
+        for layer_idx in resolved_layer_indices
     )
 
     final_norm: Qwen3RMSNorm | None = None
@@ -209,6 +232,7 @@ def materialize_qwen_stack_runtime(
     return QwenStackRuntime(
         model_path=Path(model_path),
         config=config,
+        layer_indices=resolved_layer_indices,
         embed_tokens=embed_tokens,
         layers=layers,
         rotary=rotary,
@@ -216,6 +240,21 @@ def materialize_qwen_stack_runtime(
         lm_head=lm_head,
         device=target_device,
         dtype=torch_dtype,
+    )
+
+
+def materialize_qwen_full_runtime(
+    model_path: str | Path,
+    device: str | torch.device = "cuda:0",
+    dtype: str | torch.dtype = "bfloat16",
+    include_output_head: bool = True,
+) -> QwenStackRuntime:
+    return materialize_qwen_stack_runtime(
+        model_path=model_path,
+        layer_indices=None,
+        device=device,
+        dtype=dtype,
+        include_output_head=include_output_head,
     )
 
 
@@ -418,3 +457,62 @@ def project_hidden_to_logits(runtime: QwenStackRuntime, hidden_states: torch.Ten
         raise ValueError("runtime does not include model.norm and lm_head")
     hidden_states = runtime.final_norm(hidden_states)
     return runtime.lm_head(hidden_states[:, -1:, :])
+
+
+def normalize_stop_token_ids(stop_token_ids: int | tuple[int, ...] | list[int] | None) -> tuple[int, ...]:
+    if stop_token_ids is None:
+        return ()
+    if isinstance(stop_token_ids, int):
+        return (int(stop_token_ids),)
+    return tuple(int(token_id) for token_id in stop_token_ids)
+
+
+def select_greedy_token(logits: torch.Tensor) -> torch.LongTensor:
+    return logits[:, -1, :].argmax(dim=-1, keepdim=True)
+
+
+def run_greedy_generation(
+    runtime: QwenStackRuntime,
+    input_ids: torch.LongTensor,
+    max_new_tokens: int,
+    stop_token_ids: int | tuple[int, ...] | list[int] | None = None,
+    include_last_token_in_cache: bool = True,
+) -> QwenGenerationState:
+    if max_new_tokens < 0:
+        raise ValueError("max_new_tokens must be non-negative")
+    if max_new_tokens == 0:
+        return QwenGenerationState(
+            generated_ids=torch.empty((1, 0), device=runtime.device, dtype=torch.long),
+            stop_reason="max_new_tokens",
+            cache_seq_length=int(input_ids.shape[-1]),
+        )
+
+    stop_tokens = set(normalize_stop_token_ids(stop_token_ids))
+    prefill_hidden, cache = run_stack_prefill(runtime, input_ids)
+    next_logits = project_hidden_to_logits(runtime, prefill_hidden)
+    generated: list[int] = []
+    stop_reason = "max_new_tokens"
+
+    for step in range(max_new_tokens):
+        next_token = select_greedy_token(next_logits)
+        token_id = int(next_token.item())
+        generated.append(token_id)
+        is_last_step = step == max_new_tokens - 1
+        should_stop = token_id in stop_tokens or is_last_step
+
+        if should_stop:
+            if token_id in stop_tokens:
+                stop_reason = "stop_token"
+            if include_last_token_in_cache:
+                _, cache = run_stack_decode(runtime, next_token, cache)
+            break
+
+        decode_hidden, cache = run_stack_decode(runtime, next_token, cache)
+        next_logits = project_hidden_to_logits(runtime, decode_hidden)
+
+    generated_ids = torch.tensor([generated], device=runtime.device, dtype=torch.long)
+    return QwenGenerationState(
+        generated_ids=generated_ids,
+        stop_reason=stop_reason,
+        cache_seq_length=int(cache.get_seq_length()),
+    )
