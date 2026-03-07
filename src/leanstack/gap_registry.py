@@ -50,12 +50,12 @@ GAP_REGISTRY: dict[str, GapReport] = {
         model_key="qwen",
         target_gpu="NVIDIA GB10 / compute capability sm_121 on the remote DGX Spark machine",
         default_codegen_path=(
-            "Use a throughput-first backend policy for decisive kernels: prefer `cuTile -> TileIR -> cubin` where it is competitive, "
-            "but allow Triton, CUTLASS, or PTX when they produce a faster owned path on GB10."
+            "Keep the main path at `Qwen adapter -> cuTile Python DSL -> TileIR/tilebc -> tileiras -> cubin`, "
+            "then inspect PTX and SASS artifacts for the hot kernels."
         ),
         ptx_fallback=(
-            "Use PTX only when higher-level backends cannot produce the required code shape at competitive throughput; "
-            "treat PTX as a narrowly scoped hotspot escape hatch, not the steady-state interface."
+            "Use PTX only when diagnosing why the cuTile path misses a decisive kernel shape; "
+            "treat PTX as a narrow diagnostic escape hatch, not the official benchmark backend."
         ),
         sass_stance=(
             "Treat SASS as an inspection and verification artifact. Do not make direct SASS authoring the mainline, "
@@ -169,7 +169,7 @@ GAP_REGISTRY: dict[str, GapReport] = {
                     "experiments/cutile/precision_gate.py",
                 ),
                 next_step=(
-                    "Start with whichever owned backend wins for the 1.7B-Base BF16 linears, norms, and RoPE path, then revisit FP8 or FP4 only after the BF16 runtime is benchmarkable."
+                    "Start with BF16 linears, norms, and RoPE on the cuTile path, then revisit FP8 or FP4 only after the BF16 runtime is benchmarkable."
                 ),
                 risk=(
                     "If the BF16 runtime never leaves eager PyTorch math, the project will still lack a fair specialized-stack performance comparison."
@@ -191,7 +191,7 @@ GAP_REGISTRY: dict[str, GapReport] = {
                     "scripts/render_benchmark_report.py",
                 ),
                 next_step=(
-                    "Rebuild the runtime around Qwen3-1.7B-Base BF16 first, then run exact-format BF16 comparisons against external frameworks."
+                    "Rebuild the runtime around Qwen3-1.7B-Base BF16 first, then run the staged comparison protocol against exact-format BF16 external frameworks."
                 ),
                 risk=(
                     "Benchmarking too early will compare a partially retargeted runtime against mature frameworks and produce the wrong project conclusion."

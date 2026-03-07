@@ -44,7 +44,7 @@ Current blocker:
 - the runtime still needs to be retargeted from the legacy `Qwen3-32B` work to the smaller 1.7B geometry
 - the current FP8 probe is still blocked at TileIR verification
 - the current FP4 route is still blocked in the public frontend
-- the throughput-first backend policy still needs to be turned into real hot-path kernels
+- the cuTile/TileIR backend policy still needs to be turned into real hot-path kernels
 
 First hard gate:
 

@@ -4,7 +4,7 @@ Date: 2026-03-07
 
 ## Question
 
-Can a throughput-first, agent-owned runtime tuned for `Qwen/Qwen3-1.7B-Base` BF16 on `GB10 / sm_121` stay much smaller than current inference frameworks while delivering a real throughput advantage?
+Can a `cuTile/TileIR`-native, agent-owned runtime tuned for `Qwen/Qwen3-1.7B-Base` BF16 on `GB10 / sm_121` stay much smaller than current inference frameworks while delivering a real throughput advantage?
 
 The benchmark is not only about runtime speed.
 
@@ -37,7 +37,7 @@ It is also about whether agent-generated, model-chip-specific software can repla
 - primary precision path: BF16 on the same checkpoint for every system under test where possible
 - exact model snapshot and framework versions must be recorded in every report
 - if an external baseline cannot run the exact BF16 checkpoint or a byte-identical local copy, the report must mark the format mismatch explicitly
-- if `leanstack` uses a backend other than `cuTile` for a hot kernel, the report must record that backend explicitly
+- the official comparison path keeps hot kernels on `cuTile/TileIR`
 
 ### Prompting policy
 
@@ -75,26 +75,11 @@ These are proxies, not perfect cost measures, but they are necessary if the thes
 
 ## First benchmark profiles
 
-### Profile A: Single-stream decode
+### Active profiles
 
-- one request
-- short prompt
-- fixed output length
-- goal: isolate decode throughput and scheduler overhead
-
-### Profile B: Long-prefill latency
-
-- one request
-- long prompt
-- shorter output length
-- goal: expose prefill cost and KV/cache setup behavior
-
-### Profile C: Small concurrent batch
-
-- several simultaneous requests on one machine
-- moderate prompt length
-- fixed output length
-- goal: compare batching policy and cache management
+- `decode_64_256`: primary single-request decode throughput profile
+- `decode_64_512`: longer single-request decode profile
+- `prefill_1024_64`: long-prefill profile
 
 ## Comparison rules
 
@@ -122,7 +107,8 @@ These are proxies, not perfect cost measures, but they are necessary if the thes
 No formal benchmark should be treated as dispositive until the repo clears the BF16 runtime gate:
 
 - the precision gate already says BF16 is the active public-cuTile precision on `sm_121`
-- but performance comparisons are still premature until the 8B BF16 runtime stops depending on legacy eager PyTorch math for the hot path
+- but performance comparisons are still premature until the 1.7B BF16 runtime stops depending on legacy eager PyTorch math for the hot path
+- use [COMPARISON_PROTOCOL.md](/Users/wei/work/spark/leanstack/docs/COMPARISON_PROTOCOL.md) as the gating order for official claims
 
 ## Desired output
 

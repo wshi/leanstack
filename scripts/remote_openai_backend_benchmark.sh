@@ -5,7 +5,7 @@ set -o pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REMOTE_SCRIPT="${REMOTE_SCRIPT:-$ROOT/../remote.sh}"
 REMOTE_HOME="${REMOTE_HOME:-/home/pto/lean}"
-PROFILE="${PROFILE:-single_stream_short}"
+PROFILE="${PROFILE:-decode_64_256}"
 SYSTEM_LABEL="${SYSTEM_LABEL:-framework}"
 VARIANT_LABEL="${VARIANT_LABEL:-openai}"
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"

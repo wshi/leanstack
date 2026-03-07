@@ -23,7 +23,7 @@ Today `transformers` still provides these surfaces:
 - tokenizer and chat-template handling
 - config/model-card compatibility surfaces used as reference metadata
 
-That means the current repo already knows how to keep framework heuristics out of the active path. The new blocker is no longer `device_map` or CPU offload. The new blocker is retargeting the runtime from the slow 32B reference path to a benchmarkable 8B BF16 path.
+That means the current repo already knows how to keep framework heuristics out of the active path. The new blocker is no longer `device_map` or CPU offload. The new blocker is retargeting the runtime from the slow 32B reference path to a benchmarkable 1.7B BF16 path.
 
 ## Legacy reference path
 
@@ -43,7 +43,7 @@ The key engineering task is:
 
 1. keep the BF16 precision gate green on `sm_121`
 2. keep `Qwen3-1.7B-Base` semantics and BF16 checkpoint ownership explicit
-3. lower each stable semantic unit into a throughput-first owned backend path
+3. lower each stable semantic unit into `cuTile -> TileIR -> cubin`
 4. inspect PTX and SASS for the hot kernels
 
 ## Gap matrix
@@ -112,7 +112,7 @@ The key engineering task is:
   - the benchmark harness exists
   - the legacy `Qwen3-32B` path is too slow to produce a meaningful comparison
 - Target:
-  - benchmark only after the BF16 runtime slice exists for the 8B target
+  - benchmark only after the BF16 runtime slice exists for the 1.7B target
 - Why this matters:
   - otherwise the comparison measures a legacy reference path, not the active thesis
 
@@ -120,7 +120,7 @@ The key engineering task is:
 
 1. own the `Qwen3-1.7B-Base` BF16 checkpoint contract
 2. port the old Qwen semantic path onto the new 1.7B BF16 contract
-3. lower decisive BF16 kernels into repeatable `sm_121` artifacts with the backend that wins throughput
+3. lower decisive BF16 kernels into repeatable `sm_121` artifacts on the cuTile path
 4. stand up the first runtime loop
 5. only then freeze baseline configs for external frameworks
 
@@ -128,17 +128,16 @@ The key engineering task is:
 
 ### Backend policy
 
-The default backend order should be:
+The official backend order should be:
 
-1. `cuTile -> TileIR -> cubin` when it is competitive
-2. Triton or CUTLASS when they materially improve tokens/s
-3. PTX when higher-level backends still miss the hotspot
+1. `cuTile -> TileIR -> cubin`
+2. PTX only when diagnosing a compiler miss on the cuTile path
 
-This keeps the stack inspectable while acknowledging that throughput is the first gating metric.
+This keeps the stack inspectable and keeps the official comparison path aligned with the project thesis.
 
 ### PTX
 
-PTX is a valid escape hatch when higher-level backends still cannot express or win a needed hotspot, especially for a future FP8 or FP4 kernel on `sm_121`.
+PTX is a valid escape hatch when the project needs to diagnose why the cuTile path misses a needed hotspot, especially for a future FP8 or FP4 kernel on `sm_121`.
 
 But PTX should not become the default authoring layer, for two reasons:
 

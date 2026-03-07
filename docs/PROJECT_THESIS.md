@@ -8,7 +8,7 @@ Date: 2026-03-07
 
 The project thesis is narrower and harder:
 
-- use a hardware-near execution path as the core of the stack and keep backend choice explicit
+- use `cuTile -> TileIR -> cubin -> SASS` as the core execution path
 - target one concrete semantic contract first: `Qwen/Qwen3-1.7B-Base`
 - target one concrete deployment contract first: the public `Qwen/Qwen3-1.7B-Base` BF16 checkpoint
 - target one concrete hardware class first: Blackwell, currently the remote GB10 / DGX Spark machine
@@ -104,9 +104,8 @@ That means:
 
 That hardware contract also defines the preferred compiler policy:
 
-- preferred path: `cuTile -> TileIR -> cubin` when it is competitive
-- throughput-first alternatives: Triton or CUTLASS when they win a decisive kernel
-- fallback: `PTX` only when higher-level backends still miss the hot path
+- mainline: `cuTile -> TileIR -> cubin`
+- diagnostic fallback: `PTX` only when the cuTile path misses a decisive hotspot and the project needs to understand why
 - ground truth: inspect `SASS`, but do not make direct SASS authoring the default path
 
 ### 4. Agentic development is part of the point
@@ -131,7 +130,7 @@ The intended outcome is that a bounded agent token budget can replace a large am
 
 ### Technical success
 
-- the repo keeps at least one explicit, owned BF16 path running on the remote GB10 and can connect hot kernels back to `cuTile` where it is competitive
+- the repo keeps an explicit, owned BF16 path running on the remote GB10 and the official hot path stays on `cuTile/TileIR`
 - the repo explicitly records why FP8 and FP4 are still blocked on the public stack
 - `Qwen3-1.7B-Base` BF16 runs end to end on the remote Blackwell machine through `leanstack`
 - the critical path is inspectable down to TileIR and SASS

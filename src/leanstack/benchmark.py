@@ -10,7 +10,7 @@ from typing import Any
 def _long_prefill_prompt() -> str:
     clause = (
         "A fixed Qwen3-1.7B-Base and GB10 contract removes runtime discovery, minimizes compatibility heuristics, "
-        "and lets an agent choose the fastest owned kernel path for each hot stage."
+        "and lets an agent specialize the cuTile path around one dense GQA model."
     )
     return " ".join(clause for _ in range(96))
 
@@ -54,34 +54,34 @@ class BenchmarkProfile:
 
 
 BENCHMARK_PROFILES: dict[str, BenchmarkProfile] = {
-    "single_stream_short": BenchmarkProfile(
-        key="single_stream_short",
-        title="Single-Stream Short Prompt",
-        goal="Isolate decode throughput and per-request runtime overhead on one request.",
-        prompt="Explain how a fixed model-chip contract can reduce inference overhead.",
+    "decode_64_256": BenchmarkProfile(
+        key="decode_64_256",
+        title="Decode 64/256",
+        goal="Primary single-request decode-throughput profile for the fixed Qwen3-1.7B-Base contract.",
+        prompt="Explain how a fixed Qwen3-1.7B-Base and GB10 contract can reduce inference overhead.",
         prompt_format="raw",
         max_prefill_tokens=64,
-        max_new_tokens=32,
+        max_new_tokens=256,
         concurrency=1,
     ),
-    "decode_focus": BenchmarkProfile(
-        key="decode_focus",
-        title="Decode-Focus Long Output",
-        goal="Hold prompt cost low and stress the decode path for longer token emission.",
+    "decode_64_512": BenchmarkProfile(
+        key="decode_64_512",
+        title="Decode 64/512",
+        goal="Stress the steady-state decode path with a longer emission window on one request.",
         prompt="Summarize why specialization can outperform compatibility when the model and hardware are fixed.",
         prompt_format="raw",
         max_prefill_tokens=64,
-        max_new_tokens=128,
+        max_new_tokens=512,
         concurrency=1,
     ),
-    "long_prefill": BenchmarkProfile(
-        key="long_prefill",
-        title="Long Prefill Latency",
-        goal="Expose prefill cost, staging overhead, and KV/cache setup behavior.",
+    "prefill_1024_64": BenchmarkProfile(
+        key="prefill_1024_64",
+        title="Prefill 1024/64",
+        goal="Expose prefill cost, staging overhead, and KV/cache setup behavior with a long prompt bucket.",
         prompt=_long_prefill_prompt(),
         prompt_format="raw",
         max_prefill_tokens=1024,
-        max_new_tokens=32,
+        max_new_tokens=64,
         concurrency=1,
     ),
 }

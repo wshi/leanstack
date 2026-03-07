@@ -29,14 +29,15 @@ Stage 0 in this repo does five concrete things:
 2. Provides local and remote tooling to validate the cuTile -> TileIR -> cubin -> SASS path.
 3. Keeps precision choice explicit through an executable BF16 / FP8 / FP4 gate on the remote machine.
 4. Rebuilds the runtime around `Qwen/Qwen3-1.7B-Base` BF16 instead of the legacy `Qwen3-32B` reference path.
-5. Allows `cuTile`, Triton, CUTLASS, or PTX on the hot path as long as ownership stays inside `leanstack` and the backend choice is explicit.
-6. Defines the benchmark contract against `vLLM`, `SGLang`, and other external baselines, including both runtime efficiency and software-stack complexity.
+5. Keeps the official hot path on `cuTile -> TileIR -> cubin`.
+6. Defines a staged comparison protocol against `vLLM`, `SGLang`, and other external baselines, including both runtime efficiency and software-stack complexity.
 
 ## Repository layout
 
 - `docs/PROJECT_THESIS.md`: project thesis and hard constraints.
 - `docs/ARCHITECTURE.md`: stack boundaries and replacement strategy.
 - `docs/BENCHMARK_PLAN.md`: benchmark methodology and comparison rules.
+- `docs/COMPARISON_PROTOCOL.md`: staged comparison gates from framework baselines to cuTile kernels to full-stack results.
 - `docs/EXECUTION_PLAN.md`: phased build plan and verification gates.
 - `docs/IMPLEMENTATION_GAPS.md`: structured gap analysis from borrowed `transformers` semantics to adapter-owned `cuTile/TileIR` kernels.
 - `docs/PRECISION_GATES.md`: the active BF16 / FP8 / FP4 gate results for the public cuTile stack on `sm_121`.
@@ -64,6 +65,7 @@ From `/Users/wei/work/spark/leanstack`:
 
 ```bash
 PYTHONPATH=src python3 -m leanstack.cli show-plan
+PYTHONPATH=src python3 -m leanstack.cli show-comparison-plan
 PYTHONPATH=src python3 -m leanstack.cli remote-env
 PYTHONPATH=src python3 -m leanstack.cli show-contract --model qwen
 PYTHONPATH=src python3 -m leanstack.cli show-gaps --model qwen
@@ -76,6 +78,7 @@ PYTHONPATH=src python3 -m leanstack.cli show-gaps --model qwen
 ./scripts/remote_model_probe.sh
 MODEL_ID=Qwen/Qwen3-1.7B-Base ./scripts/remote_qwen_fetch.sh
 MODEL_ID=Qwen/Qwen3-1.7B-Base ./scripts/remote_qwen_baseline.sh
+MODEL_NAME=qwen3-1.7b-base ./scripts/remote_openai_profile_sweep.sh
 ```
 
 If remote Python runtime packages are missing:
@@ -107,7 +110,7 @@ The active milestone is:
 
 - keep the public BF16 `cuTile` path green on `GB10 / sm_121`
 - rebuild the runtime around `Qwen/Qwen3-1.7B-Base` BF16 with adapter-owned placement, KV state, and kernel boundaries
-- benchmark only after that 1.7B BF16 runtime slice exists
+- benchmark only through the staged comparison protocol after that 1.7B BF16 runtime slice exists
 
 Current facts:
 

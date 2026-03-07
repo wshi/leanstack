@@ -8,8 +8,8 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         key="qwen",
         family="Qwen-family",
         loader_hint=(
-            "First target: maximize throughput on GB10/sm_121 with Qwen3-1.7B-Base BF16. Prefer cuTile when it is "
-            "competitive, but allow Triton, CUTLASS, or PTX for decisive hot kernels."
+            "First target: maximize throughput on GB10/sm_121 with Qwen3-1.7B-Base BF16 while keeping the hot path "
+            "inside `cuTile -> TileIR -> cubin`."
         ),
         semantic_model_id="Qwen/Qwen3-1.7B-Base",
         artifact_model_id="Qwen/Qwen3-1.7B-Base",
@@ -21,17 +21,15 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         target_gpu="GB10 / sm_121",
         remote_model_key="Qwen__Qwen3-1.7B-Base",
         compile_gate=(
-            "BF16 precision gate clears on sm_121. Backend choice is throughput-first: prefer cuTile where viable, "
-            "otherwise allow Triton, CUTLASS, or PTX for decisive kernels."
+            "BF16 precision gate clears on sm_121. Official comparison path must keep decisive kernels on `cuTile -> TileIR -> cubin`."
         ),
         legacy_reference="Qwen3-32B BF16 borrowed and semantic runtime loops remain as larger-model legacy reference data.",
         dtype="bfloat16",
         kv_layout="paged grouped-query attention (16 Q heads / 8 KV heads, head_dim 128)",
         backend_policy=(
-            "Prefer cuTile -> TileIR -> cubin when it does not cost throughput on the decisive path.",
-            "Allow Triton or CUTLASS for hot kernels if they materially improve tokens/s while keeping ownership inside leanstack.",
-            "Use PTX only as a narrowly scoped hotspot wedge when higher-level backends cannot produce the required code shape.",
-            "Inspect SASS for the hot path regardless of authoring backend.",
+            "Keep decisive kernels on `cuTile -> TileIR -> cubin` for the official comparison path.",
+            "Use PTX only as a diagnostic aid when understanding a compiler miss, not as the benchmarked steady-state backend.",
+            "Inspect SASS for every hot kernel that enters the official comparison path.",
         ),
         required_kernels=(
             "bf16-gemm",
@@ -47,13 +45,13 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
             "keep the BF16 compiler path green on GB10/sm_121",
             "load Qwen3-1.7B-Base config and BF16 checkpoint metadata",
             "map dense BF16 linears into adapter-owned layouts",
-            "bring up one BF16 transformer block forward path with the throughput-first backend that wins on GB10",
+            "bring up one BF16 transformer block forward path through cuTile/TileIR",
             "bring up prefill and decode with explicit KV reuse",
         ),
         static_contract=(
             "Model semantics are fixed to Qwen3-1.7B-Base with 28 layers, hidden size 2048, and GQA geometry 16Q/8KV/128.",
             "Deployment target is fixed to the public Qwen3-1.7B-Base BF16 checkpoint on GB10 / sm_121.",
-            "Only the user request is intended to stay dynamic; model geometry, precision policy, kernel inventory, backend choice per hot path, and dispatch order should be fixed by the model-chip contract.",
+            "Only the user request is intended to stay dynamic; model geometry, precision policy, kernel inventory, and dispatch order should be fixed by the model-chip contract.",
             "KV page layout, RoPE policy, BF16 linear strategy, and MLP fusion rules are fixed by the adapter.",
             "The intended execution path is GPU-resident and explicit, without framework-managed CPU offload.",
             "FP8 and FP4 stay deferred until they beat or clearly improve upon the BF16 throughput-first path.",
@@ -72,7 +70,7 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
             "Prefer relay-based model delivery if the remote host cannot fetch the Qwen3-1.7B-Base checkpoint directly.",
             "Treat TensorRT-LLM, vLLM, and SGLang as external baselines, not implementation dependencies.",
             "Treat broad compatibility as a deferred cost unless it is required by the first model-chip contract.",
-            "Treat throughput as the primary optimization target; do not keep a slower backend on the hot path just because it is conceptually cleaner.",
+            "Treat throughput as the primary optimization target, but only count wins that stay on the cuTile/TileIR path as official project evidence.",
         ),
     ),
     "glm": ModelSpec(

@@ -30,9 +30,8 @@ The current remote compiler target should be treated concretely as `GB10 / sm_12
 
 That also implies a strict backend order:
 
-- `cuTile/TileIR` is preferred when it is competitive and keeps the hot path inspectable
-- Triton or CUTLASS are acceptable when they materially improve tokens/s on decisive kernels
-- `PTX` is an escape hatch when higher-level backends still cannot express or win the hotspot
+- `cuTile/TileIR` is the official authoring path
+- `PTX` is a diagnostic escape hatch when the project needs to understand a compiler miss
 - `SASS` is a verification artifact, not the main source language
 
 ### 2. Runtime is a small state machine

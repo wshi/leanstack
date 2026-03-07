@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from .benchmark import get_benchmark_profile, list_benchmark_profiles
+from .comparison import render_comparison_plan
 from .gap_registry import get_gap_report
 from .model_registry import get_model_spec, list_models
 from .plan import render_plan
@@ -18,6 +19,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("show-plan", help="Print the phased execution plan.")
+    subparsers.add_parser("show-comparison-plan", help="Print the staged comparison protocol.")
 
     models = subparsers.add_parser("list-models", help="List supported adapter targets.")
     models.set_defaults(handler=handle_list_models)
@@ -38,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     bench_profiles.set_defaults(handler=handle_list_benchmark_profiles)
 
     bench_profile = subparsers.add_parser("show-benchmark-profile", help="Print one benchmark profile.")
-    bench_profile.add_argument("--profile", default="single_stream_short")
+    bench_profile.add_argument("--profile", default="decode_64_256")
     bench_profile.add_argument("--format", choices=("text", "json", "shell"), default="text")
     bench_profile.set_defaults(handler=handle_show_benchmark_profile)
 
@@ -156,6 +158,10 @@ def main() -> int:
 
     if args.command == "show-plan":
         print(render_plan())
+        return 0
+
+    if args.command == "show-comparison-plan":
+        print(render_comparison_plan())
         return 0
 
     parser.print_help()
