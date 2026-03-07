@@ -9,7 +9,7 @@ from typing import Any
 
 def _long_prefill_prompt() -> str:
     clause = (
-        "A fixed Qwen3-32B and GB10 contract removes runtime discovery, avoids compatibility heuristics, "
+        "A fixed Qwen3-8B-FP4 and GB10 contract removes runtime discovery, avoids compatibility heuristics, "
         "and turns inference into explicit residency, cache, and kernel decisions."
     )
     return " ".join(clause for _ in range(96))

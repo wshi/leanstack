@@ -1,50 +1,56 @@
 # Model Targets
 
-Date verified: 2026-03-06
+Date verified: 2026-03-07
 
 ## Primary target
 
-- `Qwen/Qwen3-32B`
+- semantic base: `Qwen/Qwen3-8B`
+- deployment artifact: `nvidia/Qwen3-8B-FP4`
 
 Primary source:
 
-- `https://huggingface.co/Qwen/Qwen3-32B`
-- `https://www.modelscope.cn/models/Qwen/Qwen3-32B`
+- `https://huggingface.co/Qwen/Qwen3-8B`
+- `https://huggingface.co/nvidia/Qwen3-8B-FP4`
 
 Why it is the first target:
 
 - dense causal LM
 - standard grouped-query attention path
+- much smaller and more benchmarkable than the legacy `Qwen3-32B` path on one GB10
 - simpler cuTile kernel decomposition than frontier MoE and MLA models
-- strong enough to be a credible first end-to-end target
-- realistic fit for a single GB10-class machine compared with larger frontier MoE models
+- more credible as a first performance target because the model is small enough to avoid a trivial throughput collapse
+- directly tests the thesis that a fixed model-format-chip contract can justify a much narrower runtime
 
-Validated configuration snapshot from the remote metadata preflight on 2026-03-06:
+Validated semantic configuration snapshot from the public `Qwen/Qwen3-8B` contract:
 
-- 64 layers
-- hidden size 5120
-- intermediate size 25600
-- 64 attention heads and 8 KV heads
+- 36 layers
+- hidden size 4096
+- 32 attention heads and 8 KV heads
 - head dimension 128
-- `hidden_act=silu`
-- `torch_dtype=bfloat16`
-- `rope_theta=1_000_000`
-- no sliding-window path in the base config
+- grouped-query attention
+- Qwen3 chat / thinking controls remain part of the tokenizer or prompt contract, not the core kernel contract
 
-Context note:
+Artifact note:
 
-- the remote `config.json` reports `max_position_embeddings=40960`
-- the official public model card states `32,768` native context and `131,072` tokens with `YaRN`
-- `leanstack` should treat the shorter public contract as the safe bring-up target until a longer-context path is explicitly validated
+- `leanstack` should treat the semantic base and the FP4 deployment artifact as separate but linked contracts
+- the semantic base defines geometry, RoPE policy, and prompt semantics
+- the FP4 artifact defines the exact linear weight and scale layout that the runtime must own
 
 Current blocker:
 
-- as of 2026-03-06, the DGX Spark machine times out when requesting Hugging Face model artifacts directly
-- the remote machine can reach ModelScope metadata and can download the `modelscope` wheel, so relay or mirror-based download should be part of the first deployment workflow
+- the public remote `cuda.tile 1.1.0` install exposes dtypes up to FP8, not a visible public FP4 or NVFP4 dtype
+- the remote `tileiras` binary does target `sm_121`, so backend targeting is present even though frontend FP4 coverage is still unproven
+- the remote machine may still need relay or mirror-based delivery for the NVIDIA FP4 artifact if direct access is blocked
+
+First hard gate:
+
+- prove one minimal FP4 or NVFP4 kernel through `cuTile DSL -> TileIR/tilebc -> tileiras -> cubin (sm_121)`
+- do not continue the FP4 runtime plan until this gate is cleared
 
 Primary benchmark mode:
 
 - use non-thinking mode first so reasoning-length variance does not hide runtime effects
+- keep exact-format baseline comparisons ahead of any serving work
 - keep thinking-mode benchmarks as a second pass after the core throughput path is stable
 
 ## Second-family target to preserve
@@ -77,9 +83,11 @@ Why it is deferred:
 
 ### Baseline success
 
-- remote machine can download config, tokenizer, and weights for `Qwen/Qwen3-32B` or ingest them via relay
-- one prompt can run through a simple Hugging Face baseline
+- remote machine can acquire `Qwen/Qwen3-8B` semantics and the `Qwen3-8B-FP4` deployment artifact, directly or by relay
+- one prompt can run through a simple Hugging Face semantic baseline for correctness
+- one minimal FP4 kernel can run through the public compiler path on `sm_121`
 
 ### Stack success
 
 - the new runtime reproduces the same single-request path without falling back to a monolithic serving framework
+- the decisive FP4 linear path is owned by `leanstack`, not by a framework runtime

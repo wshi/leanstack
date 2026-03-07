@@ -1,6 +1,6 @@
 # Execution Plan
 
-Date: 2026-03-06
+Date: 2026-03-07
 
 ## Phase 0: Ground the environment
 
@@ -15,67 +15,64 @@ Exit gate:
 
 - `scripts/remote_verify.sh` produces bytecode, TileIR dumps, cubin, and SASS artifacts on the remote host
 
-## Phase 1: Build a compiler-backed kernel catalog
+## Phase 1: Prove FP4 compiler feasibility
 
 Deliverables:
 
-- vector add smoke path
-- RMSNorm kernel
-- rotary embedding kernel
-- GQA paged-attention microkernel plan for `Qwen/Qwen3-32B`
-- SiLU-gated MLP fusion plan for `Qwen/Qwen3-32B` blocks
-- static execution assumptions for the first model-chip contract
+- explicit inventory of what public `cuda.tile 1.1.0` exposes on the remote host
+- one minimal FP4 or NVFP4 GEMM or linear kernel attempt
+- artifact capture for `TileIR`, `cubin`, and `SASS` on `sm_121`
+- a written decision on whether the public cuTile-native path is viable, needs PTX help, or is blocked
 
 Exit gate:
 
-- each kernel has a cuTile source, a remote validation command, and captured artifacts
+- a minimal FP4 kernel compiles to cubin and runs on the remote GB10, or the repo records a precise compiler-surface blocker
 
-## Phase 2: Stand up the runtime spine
+## Phase 2: Map the model and artifact contract
 
 Deliverables:
 
-- block manager
-- request queue
-- prefill/decode scheduler
-- execution graph with explicit kernel dispatch
+- semantic contract for `Qwen/Qwen3-8B`
+- artifact contract for `nvidia/Qwen3-8B-FP4`
+- explicit tensor and scale mapping for FP4 linears
 - explicit record of which generic framework features are being deferred as compatibility tax
-- explicit removal plan for automatic placement and CPU-offload uncertainty in the first path
 
 Exit gate:
 
-- a synthetic token generation loop runs without the serving API
+- the repo can parse the target FP4 artifact and its scales without leaning on a monolithic runtime
 
-## Phase 3: Add the first model adapter
+## Phase 3: Stand up the first runtime slice
 
 Target:
 
-- `Qwen/Qwen3-32B` on Blackwell as the first target, with a second-family adapter after the Qwen path is stable
+- `Qwen3-8B semantics + FP4 artifact` on `GB10 / sm_121`, with a second-family adapter after the Qwen path is stable
 
 Deliverables:
 
-- weight loader
+- FP4-aware weight loader
 - tokenizer wiring
 - tensor layout adapter
 - cache layout adapter
-- kernel coverage matrix
+- kernel coverage matrix for FP4 linears, norms, RoPE, and GQA
 - Qwen-specific prompt and thinking-mode handling for baseline runs
 
 Exit gate:
 
-- single-request prefill and decode execute for `Qwen/Qwen3-32B` on the remote machine
+- single-request prefill and decode execute for `Qwen3-8B-FP4` on the remote machine
 
 ## Phase 4: Benchmark Against Framework Baselines
 
 Deliverables:
 
 - benchmark harness for `generated tokens/s`, latency, and memory
-- official-baseline configs for `vLLM` and `SGLang`
+- exact-format baseline configs wherever possible
+- `vLLM` and `SGLang` baseline configs when they can run the same or a clearly labeled equivalent format
 - secondary deployment reference for `llama.cpp`
 - comparative report that records process shape, operational complexity, and compatibility tax
 
 Exit gate:
 
-- `leanstack`, `vLLM`, and `SGLang` all run a comparable `Qwen/Qwen3-32B` profile on the same machine and a first comparison table is recorded
+- a first comparison table exists for a comparable `Qwen3-8B-FP4` profile on the same machine, including a go / no-go conclusion
 
 ## Phase 5: Minimal Serving Surface
 
@@ -88,11 +85,11 @@ Deliverables:
 
 Exit gate:
 
-- remote machine serves `Qwen/Qwen3-32B` through the new stack after the benchmark contract is stable
+- remote machine serves `Qwen3-8B-FP4` through the new stack after the benchmark contract is stable
 
 ## Current blockers to clear
 
-1. Replace the current dense semantic KV tensor and probe-style residency flow with a fixed `Qwen3-32B + GB10` page/layout contract.
-2. Lower the working semantic full-model loop from eager PyTorch operators into explicit `cuTile/TileIR` kernel requirements.
-3. Prepare official baseline configurations for `vLLM` and `SGLang` on the same machine and model profile.
-4. Define the first benchmark table format, including software-complexity and agent-cost proxies, before adding a larger serve surface.
+1. Prove whether the public `cuTile` Python surface can express any credible FP4 kernel at all on `sm_121`.
+2. Separate `Qwen3-8B` semantic ownership from `Qwen3-8B-FP4` artifact ownership.
+3. Define the exact-format benchmark contract before rebuilding the larger runtime.
+4. Keep the legacy `Qwen3-32B BF16` path as reference data only, not as the active optimization target.

@@ -1,6 +1,6 @@
 # References
 
-Date verified: 2026-03-06
+Date verified: 2026-03-07
 
 ## Agentic CUDA work
 
@@ -31,6 +31,10 @@ Date verified: 2026-03-06
   - Official NVIDIA reference for current Blackwell-family support and the CuTe DSL positioning.
   - Useful here because it exposes the current NVIDIA view of Python-DSL-to-kernel authoring and explicitly lists Blackwell-family targets, including DGX Spark / `12.1`.
 
+- [Blackwell functionality in CUTLASS](https://docs.nvidia.com/cutlass/latest/overview.html#blackwell-functionality)
+  - Official NVIDIA reference for Blackwell narrow-precision support in the broader CUTLASS stack.
+  - Relevant because it is part of the external evidence that FP4 or NVFP4 support exists somewhere in the broader NVIDIA stack even though the public `cuda.tile` frontend still needs to be proven.
+
 - [CuTe DSL framework integration](https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/cute_dsl_general/framework_integration.html)
   - Official reference for how the NVIDIA Python DSL interoperates with framework tensors and exported kernels.
   - Relevant because `leanstack` needs to move from framework-owned execution to framework-assisted tensor handoff.
@@ -55,6 +59,10 @@ Date verified: 2026-03-06
 - [vLLM Optimization and Tuning](https://docs.vllm.ai/en/stable/configuration/optimization/)
   - Official reference for scheduler behavior, chunked prefill, preemption, and CPU resource requirements.
 
+- [vLLM Compressed Tensors](https://docs.vllm.ai/en/stable/features/quantization/compressed_tensors.html)
+  - Official vLLM reference for compressed-tensor and quantized deployment paths.
+  - Relevant because exact-format or near-format FP4 comparisons must be labeled precisely.
+
 - [vLLM Paged Attention](https://docs.vllm.ai/en/stable/design/paged_attention.html)
   - Official but historical design note.
   - Useful as a conceptual kernel reference only; the page states it no longer describes the current code exactly.
@@ -71,13 +79,20 @@ Date verified: 2026-03-06
 - [SGLang HiCache](https://docs.sglang.io/advanced_features/hicache.html)
   - Official reference for hierarchical KV caching and long-context serving design.
 
+- [SGLang Quantization](https://docs.sglang.io/advanced_features/quantization.html)
+  - Official reference for SGLang quantization paths.
+  - Relevant because FP4 benchmark claims should distinguish exact-format support from other quantized variants.
+
 ## Target model and target hardware
 
-- [Qwen/Qwen3-32B model card](https://huggingface.co/Qwen/Qwen3-32B)
-  - Primary public reference for Qwen3-32B model features, context claims, and thinking / non-thinking usage guidance.
+- [Qwen/Qwen3-8B model card](https://huggingface.co/Qwen/Qwen3-8B)
+  - Primary public reference for Qwen3-8B model features, context claims, and thinking / non-thinking usage guidance.
 
-- [Qwen/Qwen3-32B on ModelScope](https://www.modelscope.cn/models/Qwen/Qwen3-32B)
-  - Primary deployment reference because the remote machine can reach ModelScope even when direct Hugging Face artifact downloads time out.
+- [nvidia/Qwen3-8B-FP4 model card](https://huggingface.co/nvidia/Qwen3-8B-FP4)
+  - Primary deployment-artifact reference for the active FP4 pivot.
+
+- [Qwen/Qwen3-8B on ModelScope](https://www.modelscope.cn/models/Qwen/Qwen3-8B)
+  - Primary semantic-base acquisition reference when the remote machine can reach ModelScope more reliably than Hugging Face.
 
 - [NVIDIA Blackwell architecture](https://www.nvidia.com/en-us/data-center/technologies/blackwell-architecture/)
   - Primary reference for Blackwell hardware characteristics and Transformer Engine direction.

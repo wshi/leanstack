@@ -3,10 +3,11 @@ set -eu
 set -o pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-MODEL_ID="${MODEL_ID:-Qwen/Qwen3-32B}"
+MODEL_ID="${MODEL_ID:-Qwen/Qwen3-8B}"
 REMOTE_HOME="${REMOTE_HOME:-/home/pto/lean}"
-MODEL_SOURCE_FILE="${MODEL_SOURCE_FILE:-$REMOTE_HOME/models/Qwen__Qwen3-32B.path}"
-PROMPT="${PROMPT:-Summarize why an agent-built, cuTile-native Qwen3-32B stack may outperform a compatibility-heavy framework stack on Blackwell.}"
+MODEL_KEY="${MODEL_ID//\//__}"
+MODEL_SOURCE_FILE="${MODEL_SOURCE_FILE:-$REMOTE_HOME/models/$MODEL_KEY.path}"
+PROMPT="${PROMPT:-Summarize why an agent-built, cuTile-native Qwen3-8B stack may outperform a compatibility-heavy framework stack on Blackwell.}"
 PROMPT_FORMAT="${PROMPT_FORMAT:-chat}"
 THINKING_MODE="${THINKING_MODE:-disable}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-64}"

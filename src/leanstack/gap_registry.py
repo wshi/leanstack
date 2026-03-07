@@ -54,7 +54,7 @@ GAP_REGISTRY: dict[str, GapReport] = {
             "then inspect PTX and SASS artifacts for the hot kernels."
         ),
         ptx_fallback=(
-            "Use PTX only when cuTile/TileIR cannot yet express a required scheduling or instruction pattern; "
+            "Use PTX only when the public cuTile frontend cannot yet express a required FP4 schedule or instruction pattern; "
             "treat PTX as a temporary escape hatch, not the steady-state interface."
         ),
         sass_stance=(
@@ -63,17 +63,66 @@ GAP_REGISTRY: dict[str, GapReport] = {
         ),
         items=(
             GapItem(
-                key="semantic-ownership",
-                title="Replace borrowed Qwen semantics with adapter-owned operators",
+                key="fp4-compiler-feasibility",
+                title="Prove public FP4 compiler feasibility on sm_121",
                 status="in_progress",
                 current_state=(
-                    "The semantic path now runs from layer-0 probes to a full 64-layer runtime loop using adapter-owned "
-                    "RMSNorm, RoPE, attention, MLP, final norm, logits projection, and KV cache control. The borrowed "
-                    "`transformers` path remains in the repo as a correctness oracle rather than as the only working full-model path."
+                    "Official external sources show Blackwell FP4 support in the broader NVIDIA stack, and the remote `tileiras` "
+                    "binary targets `sm_121`, but the installed public `cuda.tile 1.1.0` frontend only exposes visible dtypes up to FP8."
                 ),
                 target_state=(
-                    "The Qwen adapter owns RMSNorm, RoPE, GQA attention, MLP, final norm, output projection, and cache semantics "
-                    "without importing model execution behavior from `transformers`."
+                    "At least one minimal FP4 or NVFP4 GEMM or linear kernel compiles through the public cuTile-native chain "
+                    "and runs on the remote GB10."
+                ),
+                code_surface=(
+                    "docs/FP4_COMPILER_GATE.md",
+                    "experiments/cutile/vector_add.py",
+                    "scripts/remote_verify.sh",
+                ),
+                next_step=(
+                    "Write a minimal FP4 compiler probe, capture TileIR/cubin/SASS artifacts, and record whether the public frontend "
+                    "can express the needed dtype and scheduling surface."
+                ),
+                risk=(
+                    "If the public compiler path cannot emit any real FP4 kernel on `sm_121`, the active target is blocked before "
+                    "runtime specialization matters."
+                ),
+            ),
+            GapItem(
+                key="artifact-contract",
+                title="Own the Qwen3-8B-FP4 artifact contract",
+                status="missing",
+                current_state=(
+                    "The repo already handles Qwen config and tokenizer metadata well, but it does not yet own the tensor and scale mapping "
+                    "for the `Qwen3-8B-FP4` deployment artifact."
+                ),
+                target_state=(
+                    "The adapter knows how to map FP4 linears, any scale tensors, and higher-precision residual paths without deferring "
+                    "that structure to an external runtime."
+                ),
+                code_surface=(
+                    "src/leanstack/model_registry.py",
+                    "docs/MODEL_TARGETS.md",
+                    "scripts/remote_qwen_fetch.sh",
+                ),
+                next_step=(
+                    "Fetch or relay the target artifact, inspect its metadata layout, and codify the tensor and scale contract in the adapter."
+                ),
+                risk=(
+                    "Without explicit artifact ownership, the runtime cannot know which kernels need FP4 inputs, where scales live, or how "
+                    "to keep the execution path static."
+                ),
+            ),
+            GapItem(
+                key="semantic-retarget",
+                title="Retarget the legacy Qwen semantic path to the 8B FP4 contract",
+                status="in_progress",
+                current_state=(
+                    "The repo already contains a legacy explicit Qwen path for `Qwen3-32B BF16`, including adapter-owned block semantics, "
+                    "explicit weight staging, and a leanstack-owned KV path."
+                ),
+                target_state=(
+                    "The same ownership pattern is ported to `Qwen3-8B` semantics with the FP4 artifact layout replacing the older BF16 assumption."
                 ),
                 code_surface=(
                     "src/leanstack/runtime/qwen_explicit.py",
@@ -81,120 +130,81 @@ GAP_REGISTRY: dict[str, GapReport] = {
                     "experiments/models/qwen_explicit_runtime_loop.py",
                 ),
                 next_step=(
-                    "Keep the borrowed path only as a correctness oracle, then freeze the semantic surface and lower it kernel-by-kernel into `cuTile/TileIR`."
+                    "Shrink the geometry to the 8B contract, replace BF16 linear assumptions with FP4-aware layout rules, and keep `transformers` "
+                    "only as a correctness oracle."
                 ),
                 risk=(
-                    "If semantic ownership stops at eager PyTorch, the runtime becomes cleaner but the decisive kernel and memory optimizations stay blocked."
+                    "If the old semantic path is copied forward without retargeting the artifact contract, the repo will keep optimizing a legacy path "
+                    "instead of the active thesis."
                 ),
             ),
             GapItem(
-                key="residency-and-layout",
-                title="Turn per-layer staging into a full-model residency plan",
-                status="in_progress",
+                key="residency-and-kv",
+                title="Rebuild residency and KV layout for the smaller FP4 target",
+                status="missing",
                 current_state=(
-                    "Both borrowed and semantic runtime loops can now materialize all 64 Qwen3-32B layers plus the output head onto GB10 GPU memory, "
-                    "but the current path is still a probe-oriented layer-by-layer staging flow rather than a production residency planner."
+                    "The repo has a legacy page-based KV manager and residency logic that were shaped around `Qwen3-32B BF16`."
                 ),
                 target_state=(
-                    "A fixed Qwen3-32B + GB10 layout defines which tensors live permanently on GPU, how KV pages are allocated, "
-                    "and how prefill/decode reuse avoids hidden CPU traffic."
-                ),
-                code_surface=("src/leanstack/runtime/qwen_explicit.py",),
-                next_step=(
-                    "Add a model-wide residency planner for 64 layers, explicit KV page geometry, and pinned-CPU-to-GPU transfer policy so semantic materialization stops behaving like a probe."
-                ),
-                risk=(
-                    "Without a fixed residency plan, later performance work will be polluted by placement and transfer noise."
-                ),
-            ),
-            GapItem(
-                key="kv-cache",
-                title="Replace `DynamicCache` with a static paged KV manager",
-                status="in_progress",
-                current_state=(
-                    "A page-based KV manager now exists for the semantic block probe and the active full semantic runtime loop, "
-                    "but the current implementation is still a dense preallocated tensor with simple append semantics rather than a true page table with reuse."
-                ),
-                target_state=(
-                    "The runtime owns a paged KV structure specialized for Qwen3-32B GQA geometry on GB10, including block allocation, "
-                    "reuse, and deterministic decode addressing."
+                    "A smaller residency plan and KV contract are specialized for `Qwen3-8B-FP4` on GB10, with static layout decisions "
+                    "and no hidden placement heuristics."
                 ),
                 code_surface=(
+                    "src/leanstack/runtime/kv_cache.py",
                     "src/leanstack/runtime/qwen_explicit.py",
                     "src/leanstack/runtime/engine.py",
                 ),
                 next_step=(
-                    "Replace the dense `KVBlockManager` storage with page-table-backed allocation and keep `DynamicCache` only in the borrowed reference path."
+                    "Define the 8B residency plan, page geometry, and transfer policy after the FP4 artifact contract is known."
                 ),
                 risk=(
-                    "Attention kernels cannot become hardware-near while cache layout remains hidden behind a general-purpose framework cache."
+                    "If residency and KV layout are still inherited from the 32B BF16 reference work, the smaller FP4 target will not realize "
+                    "its expected simplicity or throughput advantages."
                 ),
             ),
             GapItem(
                 key="kernel-catalog",
-                title="Replace torch-backed math with a Qwen kernel catalog",
+                title="Build the FP4-first kernel catalog",
                 status="missing",
                 current_state=(
-                    "The semantic runtime no longer inherits block execution from `transformers`, but it still implements attention, MLP, and projection math with eager PyTorch operators."
+                    "No FP4 kernel path is proven yet, and the legacy Qwen path still relies on eager PyTorch math for active semantics."
                 ),
                 target_state=(
-                    "A minimal kernel catalog exists for RMSNorm, rotary application, QKV/O projections, GQA prefill, GQA decode, "
-                    "gated MLP, final norm, logits projection, and greedy sampling."
+                    "A compact kernel catalog exists for FP4 linears or GEMMs, dequant or scale epilogues, RMSNorm, RoPE, GQA prefill, "
+                    "GQA decode, gated MLP, logits projection, and sampling."
                 ),
                 code_surface=(
                     "src/leanstack/runtime/qwen_explicit.py",
                     "experiments/cutile/vector_add.py",
+                    "docs/FP4_COMPILER_GATE.md",
                 ),
                 next_step=(
-                    "Start with the non-controversial kernels first: RMSNorm, RoPE, and greedy sampler; then bring up GQA prefill/decode, "
-                    "which is the highest-value hotspot."
+                    "After the compiler probe succeeds, start with the decisive FP4 linear path, then lower norms, RoPE, and the rest of the decode path."
                 ),
                 risk=(
-                    "The attention and GEMM path may expose performance gaps in the current cuTile/TileIR toolchain on `sm_121`."
+                    "If the kernel catalog never clears the FP4 linear and decode hot paths, the new target will not produce a meaningful performance case."
                 ),
             ),
             GapItem(
-                key="compiler-packaging",
-                title="Move from probe-time code paths to repeatable `sm_121` compiler artifacts",
-                status="missing",
-                current_state=(
-                    "The repo validates cuTile with a smoke kernel and captures compiler artifacts, but the Qwen execution path is not yet backed "
-                    "by an AOT-compiled kernel bundle."
-                ),
-                target_state=(
-                    "Each hot kernel has a repeatable `sm_121` compilation path that emits TileIR, PTX/cubin, and SASS artifacts into the remote workspace."
-                ),
-                code_surface=(
-                    "scripts/remote_verify.sh",
-                    "experiments/cutile/vector_add.py",
-                ),
-                next_step=(
-                    "Introduce a kernel bundle layout and compile manifest so each Qwen kernel can be built, hashed, and validated independently."
-                ),
-                risk=(
-                    "Without stable compiler packaging, it is too easy to confuse code changes, toolkit changes, and architecture effects."
-                ),
-            ),
-            GapItem(
-                key="scheduler-and-loop",
-                title="Upgrade probes into a deterministic runtime loop",
+                key="benchmark-gate",
+                title="Benchmark only after the FP4 runtime exists",
                 status="in_progress",
                 current_state=(
-                    "Deterministic, single-request, full 64-layer runtime loops now run on the remote machine in both borrowed and semantic modes with explicit greedy decode accounting, "
-                    "but they are still script-level loops rather than a scheduler-ready runtime surface."
+                    "The benchmark harness exists, but the legacy `Qwen3-32B` path is too slow to produce a meaningful specialized-stack comparison."
                 ),
                 target_state=(
-                    "A small runtime loop performs deterministic single-request prefill/decode first, then expands to comparable batching rules for benchmark work."
+                    "The first real benchmark table measures the active `Qwen3-8B-FP4 + GB10` contract and records a clear go / no-go conclusion."
                 ),
                 code_surface=(
-                    "src/leanstack/runtime/engine.py",
-                    "experiments/models/qwen_explicit_runtime_loop.py",
+                    "src/leanstack/benchmark.py",
+                    "scripts/remote_leanstack_benchmark.sh",
+                    "scripts/render_benchmark_report.py",
                 ),
                 next_step=(
-                    "Move the working semantic full-model loop behind a runtime-owned request and scheduler surface, then add deterministic batching rules."
+                    "Keep benchmark scripts ready, but do not treat any result as dispositive until the FP4 compiler gate and first 8B runtime slice are working."
                 ),
                 risk=(
-                    "Benchmarking against vLLM or SGLang before this loop becomes a real runtime surface would still measure missing scheduler and runtime features, not only kernel quality."
+                    "Benchmarking too early will compare a legacy reference path against mature frameworks and produce the wrong project conclusion."
                 ),
             ),
         ),

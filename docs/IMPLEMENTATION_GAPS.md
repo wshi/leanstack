@@ -7,7 +7,8 @@ Date verified: 2026-03-07
 - The current remote deployment target is `NVIDIA GB10`.
 - The remote machine reports compute capability `12.1`.
 - The remote `tileiras` tool exposes `--gpu-name=sm_121`.
-- The first contract remains `Qwen/Qwen3-32B + GB10/sm_121`.
+- The active first contract is `Qwen3-8B semantics + Qwen3-8B-FP4 artifact + GB10/sm_121`.
+- The public remote `cuda.tile 1.1.0` install exposes `float16`, `float32`, `float64`, `bfloat16`, `tfloat32`, `float8_e4m3fn`, and `float8_e5m2`, but no visible public `FP4` or `NVFP4` dtype symbol.
 
 ## What `transformers` still provides today
 
@@ -15,122 +16,111 @@ The repo has already removed `device_map="auto"` from the baseline path and move
 
 Today `transformers` still provides these surfaces:
 
-- the borrowed reference path built from `Qwen3DecoderLayer`, `Qwen3RotaryEmbedding`, `Qwen3RMSNorm`, and `DynamicCache`
+- semantic-base correctness oracles for dense Qwen execution
 - tokenizer and chat-template handling
 - config/model-card compatibility surfaces used as reference metadata
 
-That means the current repo is no longer framework-directed in placement, and the active semantic loop is no longer framework-directed in layer semantics or KV cache behavior. The remaining dependence is mostly reference-mode correctness, tokenizer/config compatibility, and eager PyTorch math.
+That means the current repo already knows how to keep framework heuristics out of the active path. The new blocker is not `device_map` or CPU offload. The new blocker is FP4 compiler feasibility.
+
+## Legacy reference path
+
+The repo still contains a `Qwen3-32B BF16` borrowed runtime loop and a `Qwen3-32B BF16` semantic runtime loop.
+
+Those runs are still useful as reference data because they show:
+
+- explicit semantic ownership is possible
+- a full-model loop can run on GB10
+- `~2 tokens/s` is too slow to justify a serious framework comparison
+
+But they are no longer the active first target.
 
 ## The critical gap to close
 
-The key engineering task is not "replace PyTorch everywhere at once."
+The key engineering task is:
 
-It is:
-
-1. keep `transformers` only as a correctness oracle
-2. pull semantic ownership into the Qwen adapter
+1. prove public FP4 compiler feasibility on `sm_121`
+2. keep `Qwen3-8B` semantics and `Qwen3-8B-FP4` artifact ownership explicit
 3. lower each stable semantic unit into `cuTile -> TileIR -> cubin`
 4. inspect PTX and SASS for the hot kernels
 
-## Measured delta on GB10 today
-
-For the same `prompt_tokens=8`, `max_new_tokens=4` probe on the remote GB10 machine:
-
-- borrowed full runtime loop:
-  - materialization about `76.7s`
-  - runtime-loop throughput about `2.24 tokens/s`
-- semantic full runtime loop:
-  - materialization about `290.7s`
-  - runtime-loop throughput about `1.92 tokens/s`
-
-Interpretation:
-
-- semantic ownership and leanstack-owned KV cache are now proven at full-model scale
-- the remaining gap is primarily eager PyTorch math, dense/probe-style cache layout, and layer-by-layer staging
-- this is exactly the point where `cuTile/TileIR` kernel work becomes the decisive next step
-
 ## Gap matrix
 
-### 1. Semantic ownership
+### 1. FP4 compiler feasibility
 
 - Current:
-  - `leanstack` owns weight indexing, shard reads, and GPU placement.
-  - an adapter-owned semantic path now runs end-to-end from layer-0 probes to the full 64-layer runtime loop.
-  - the active semantic loop owns RMSNorm, RoPE, GQA attention, MLP, final norm, logits projection, and KV cache control.
-  - the borrowed `transformers` path is now a correctness oracle rather than the only working full-model execution path.
+  - official external sources show Blackwell FP4 support in the broader NVIDIA stack
+  - remote inspection of public `cuda.tile 1.1.0` shows visible dtypes only up to FP8
+  - `tileiras` already supports `sm_121`
 - Target:
-  - `leanstack` owns RMSNorm, RoPE, QKV projections, GQA attention, MLP, final norm, output projection, and sampler behavior.
+  - at least one minimal FP4 or NVFP4 kernel compiles and runs through the public `cuTile`-native path on `sm_121`
 - Why this matters:
-  - the next blocking issue is no longer semantic ownership itself, but lowering that owned semantic surface into `cuTile/TileIR` kernels
+  - if the compiler gate fails, the active project target is blocked before any runtime optimization matters
 
-### 2. Full-model residency and layout
+### 2. Semantic ownership
 
 - Current:
-  - the explicit runtime loop can now materialize all 64 Qwen3-32B layers, final norm, and output head onto GB10 GPU memory
-  - the new full semantic loop also materializes all 64 layers and reaches about `65.5 GiB` allocated after materialization on GB10
-  - the current materialization path is still a probe-oriented, layer-by-layer staging flow rather than a production residency planner, which is why semantic materialization is still much slower than the borrowed reference path
+  - `leanstack` already has a legacy explicit Qwen path that owns weight indexing, shard reads, GPU placement, KV state, and layer semantics
+  - that path is still tied to the old `Qwen3-32B BF16` reference work
 - Target:
-  - a fixed `Qwen3-32B + GB10` residency plan for all 64 layers, plus deterministic KV layout
+  - `leanstack` owns `Qwen3-8B` semantics and the `Qwen3-8B-FP4` artifact layout without borrowing execution behavior from `transformers`
 - Why this matters:
-  - performance results are meaningless if residency and movement are still fluid
+  - the repo already proved the general direction on a legacy path, so the next step is to shrink and retarget the same ownership pattern to the new 8B FP4 contract
 
-### 3. KV cache ownership
+### 3. Artifact ownership
 
 - Current:
-  - a page-based KV manager exists for the semantic block probe and now also drives the active full semantic runtime loop
-  - the current implementation still uses a dense preallocated tensor and simple append logic rather than a fully paged indirection/reuse scheme
+  - the repo has strong Qwen config and tokenizer handling on the legacy dense path
+  - the repo does not yet own the `Qwen3-8B-FP4` tensor and scale contract
 - Target:
-  - a paged KV manager specialized to Qwen GQA geometry on `sm_121`
+  - explicit mapping for FP4 linears, higher-precision residual tensors, and any scale metadata needed by the artifact
 - Why this matters:
-  - decode performance and memory behavior are dominated by KV layout
+  - the semantic contract and the deployment artifact must be separated before kernels can be specialized correctly
 
-### 4. Kernel catalog
+### 4. Runtime residency and KV layout
 
 - Current:
-  - the semantic runtime no longer inherits block execution from framework modules
-  - all math still runs through eager PyTorch operators such as `F.linear`, `softmax`, and `silu`
+  - the repo already has a legacy page-based KV manager and residency logic shaped around `Qwen3-32B BF16`
 - Target:
-  - a small catalog of Qwen-specific kernels:
+  - a smaller residency plan and KV contract specialized for `Qwen3-8B-FP4` on GB10
+- Why this matters:
+  - the new target only makes sense if its smaller shape translates into materially simpler and faster residency behavior
+
+### 5. Kernel catalog
+
+- Current:
+  - no FP4 kernel path is proven yet
+  - the old dense Qwen path still relies on eager PyTorch math for its active semantics
+- Target:
+  - a small `Qwen3-8B-FP4` kernel catalog exists for:
+    - FP4 linear or GEMM path
+    - dequant or scale epilogue where required
     - RMSNorm
     - RoPE
-    - QKV projection
-    - output projection
-    - GQA prefill attention
-    - GQA decode attention
+    - GQA prefill and decode
     - gated MLP
-    - final norm
     - logits projection
     - sampler
 - Why this matters:
-  - this is the actual bridge from model semantics to hardware language
+  - this is the actual bridge from model semantics and FP4 artifact structure to hardware language
 
-### 5. Compiler packaging
-
-- Current:
-  - cuTile smoke and artifact capture exist, but the Qwen path is not yet backed by a kernel bundle
-- Target:
-  - per-kernel `sm_121` compilation manifests with TileIR, cubin, and SASS artifacts
-- Why this matters:
-  - reproducibility is required before optimization claims are credible
-
-### 6. Runtime loop
+### 6. Benchmark gate
 
 - Current:
-  - deterministic, single-request, full 64-layer prefill/decode loops now run on the remote machine in both borrowed and semantic modes
-  - the semantic mode uses leanstack-owned KV cache state and adapter-owned layer semantics, but is still a script-level loop
+  - the benchmark harness exists
+  - the legacy `Qwen3-32B` path is too slow to produce a meaningful comparison
 - Target:
-  - a small runtime loop performs deterministic single-request prefill/decode first, then expands to comparable batching rules for benchmark work
+  - benchmark only after the FP4 compiler gate and first 8B runtime slice are working
 - Why this matters:
-  - only then does `tokens/s` comparison against `vLLM` or `SGLang` become meaningful
+  - otherwise the comparison measures a legacy reference path, not the active thesis
 
 ## Recommended closure order
 
-1. replace the dense semantic KV tensor with a true static page contract and residency planner
-2. lower `RMSNorm`, `RoPE`, logits projection, and sampler from eager PyTorch into `cuTile/TileIR`
-3. lower GQA prefill/decode and projection kernels
+1. prove or disprove minimal FP4 kernel feasibility on public `cuTile` for `sm_121`
+2. own the `Qwen3-8B-FP4` artifact contract
+3. port the old Qwen semantic path onto the new 8B FP4 contract
 4. package kernels as repeatable `sm_121` artifacts
-5. turn the semantic single-request loop into a scheduler-ready runtime surface
-6. only then freeze baseline configs for `vLLM` and `SGLang`
+5. stand up the first runtime loop
+6. only then freeze baseline configs for external frameworks
 
 ## Compiler-path policy
 
@@ -144,7 +134,7 @@ This keeps the stack inspectable and still close enough to hardware to expose th
 
 ### PTX
 
-PTX is a valid escape hatch when the DSL or TileIR surface cannot yet express a needed behavior, especially for a hotspot kernel on `sm_121`.
+PTX is a valid escape hatch when the DSL or TileIR surface cannot yet express a needed behavior, especially for a hotspot FP4 kernel on `sm_121`.
 
 But PTX should not become the default authoring layer, for two reasons:
 
@@ -169,11 +159,14 @@ In short:
 
 ## The real performance risk
 
-Yes, there is a real possibility that the current `cuTile/TileIR` stack underperforms on some Qwen kernels, especially GQA decode and large projection kernels.
+Yes, there is a real possibility that the current public `cuTile/TileIR` stack either:
+
+- does not expose FP4 at all in the authoring surface we need
+- or underperforms on decisive FP4 Qwen kernels such as projections and decode attention
 
 That should change the execution strategy, not the thesis:
 
-- prove the semantic path first
+- prove the compiler surface first
 - measure where `cuTile/TileIR` misses on `sm_121`
 - use PTX selectively only where the compiler surface is the blocker
 - reserve direct SASS work for last-resort research, not first-pass implementation

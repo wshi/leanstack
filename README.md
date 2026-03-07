@@ -15,20 +15,21 @@ This repo explores a different path with five constraints:
 
 1. The execution path must stay explicit down to `cuTile -> TileIR -> cubin -> SASS`.
 2. The runtime must stay small enough that an agent can regenerate and modify it cheaply.
-3. The first contract is a model-chip pair, `Qwen/Qwen3-32B` on Blackwell, not "all models on all hardware."
+3. The first contract is a model-chip pair, `Qwen3-8B semantics + FP4 deployment artifact` on `GB10 / sm_121`, not "all models on all hardware."
 4. `vLLM`, `SGLang`, `llama.cpp`, and similar systems are compatibility-heavy baselines to compare against, not runtime dependencies.
 5. Remote validation on the DGX Spark machine is part of the development loop, not an afterthought.
 
-In the strongest form of this thesis, the only meaningful dynamic input should be the user request payload. Model geometry, chip target, memory layout, kernel inventory, and dispatch policy should all be fixed by the `Qwen3-32B + GB10` contract.
+In the strongest form of this thesis, the only meaningful dynamic input should be the user request payload. Model geometry, chip target, quantization policy, memory layout, kernel inventory, and dispatch policy should all be fixed by the `Qwen3-8B-FP4 + GB10` contract.
 
 ## Scope
 
-Stage 0 in this repo does four concrete things:
+Stage 0 in this repo does five concrete things:
 
 1. Defines the project thesis for an agent-built, model-chip-specific LLM stack.
 2. Provides local and remote tooling to validate the cuTile -> TileIR -> cubin -> SASS path.
-3. Establishes the bring-up plan for a `Qwen/Qwen3-32B` adapter on a Blackwell-class remote machine.
-4. Defines the benchmark contract against `vLLM`, `SGLang`, and a secondary `llama.cpp` reference path, including both runtime efficiency and software-stack complexity.
+3. Separates `Qwen/Qwen3-8B` semantic ownership from the `nvidia/Qwen3-8B-FP4` deployment artifact.
+4. Makes FP4 compiler feasibility on `GB10 / sm_121` the first hard gate before more runtime work.
+5. Defines the benchmark contract against `vLLM`, `SGLang`, and other external baselines, including both runtime efficiency and software-stack complexity.
 
 ## Repository layout
 
@@ -37,6 +38,7 @@ Stage 0 in this repo does four concrete things:
 - `docs/BENCHMARK_PLAN.md`: benchmark methodology and comparison rules.
 - `docs/EXECUTION_PLAN.md`: phased build plan and verification gates.
 - `docs/IMPLEMENTATION_GAPS.md`: structured gap analysis from borrowed `transformers` semantics to adapter-owned `cuTile/TileIR` kernels.
+- `docs/FP4_COMPILER_GATE.md`: the current evidence and gate criteria for a public cuTile-native FP4 path on `sm_121`.
 - `docs/MODEL_FIT_ANALYSIS.md`: frontier-model architecture fit versus cuTile complexity.
 - `docs/MODEL_TARGETS.md`: verified model targets and hardware-fit decisions.
 - `docs/REFERENCES.md`: external research, framework, model, and hardware references.
@@ -63,13 +65,10 @@ PYTHONPATH=src python3 -m leanstack.cli show-gaps --model qwen
 ./scripts/remote_bootstrap.sh
 ./scripts/remote_sync.sh
 ./scripts/remote_verify.sh
+./scripts/remote_fp4_inventory.sh
 ./scripts/remote_model_probe.sh
-./scripts/remote_qwen_fetch.sh
-./scripts/remote_qwen_block_probe.sh
-./scripts/remote_qwen_stack_probe.sh
-./scripts/remote_qwen_runtime_loop.sh
-./scripts/remote_qwen_semantic_block_probe.sh
-./scripts/remote_qwen_baseline.sh
+MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_fetch.sh
+MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_baseline.sh
 ```
 
 If remote Python runtime packages are missing:
@@ -85,7 +84,7 @@ If the remote machine cannot access a site directly, download on the Mac and rel
 ./scripts/push_local_file_to_remote.sh <local-path> <remote-path>
 ```
 
-`remote_qwen_fetch.sh` installs `modelscope` on the remote host if needed, downloads `Qwen/Qwen3-32B` into `/home/pto/lean/models`, and records the resolved local snapshot path so `remote_qwen_baseline.sh` can prefer the local copy over Hugging Face.
+`remote_qwen_fetch.sh` installs `modelscope` on the remote host if needed, downloads a Qwen snapshot into `/home/pto/lean/models`, and records the resolved local snapshot path so `remote_qwen_baseline.sh` can prefer the local copy over a public model id. For the active pivot, use it first for the `Qwen/Qwen3-8B` semantic contract. The `nvidia/Qwen3-8B-FP4` deployment artifact may require relay from the Mac if the remote host cannot fetch it directly.
 
 For a metadata-only preflight before downloading the full checkpoint:
 
@@ -95,20 +94,24 @@ MODEL_ALLOW_PATTERN='*.json' ./scripts/remote_qwen_fetch.sh
 
 ## Current status
 
-As of 2026-03-07, the first milestone is a compiler-grounded vertical slice:
+As of 2026-03-07, the active milestone is no longer "run the largest possible Qwen on one GB10."
+
+The active milestone is:
+
+- prove whether the public `cuTile` stack can express one real FP4 kernel on `GB10 / sm_121`
+- map `Qwen3-8B` semantics and the `Qwen3-8B-FP4` deployment artifact into an adapter-owned contract
+- benchmark only after that compiler gate is cleared
+
+Current facts:
 
 - local repo scaffolded from zero
 - remote cuTile smoke wired into the DGX Spark machine
-- Qwen adapter work split into explicit phases instead of being hidden inside a giant runtime
-- ModelScope-based `Qwen/Qwen3-32B` fetch path validated on the remote machine
-- explicit layer-0 Qwen block/prefill/decode probe runs on the remote GB10 without `device_map=\"auto\"`
-- explicit multi-layer Qwen stack probe is now available, so the next extension can happen on the same runtime surface
-- borrowed explicit full-model Qwen runtime loop now runs across all 64 layers on the remote GB10, with approximately `65.6 GiB` allocated after materialization and about `2.24 tokens/s` in runtime-loop throughput for the `8+4` token probe
-- adapter-owned Qwen semantics now extend all the way to a full 64-layer semantic runtime loop with a page-based KV manager, approximately `65.5 GiB` allocated after materialization, and about `1.92 tokens/s` in runtime-loop throughput for the same `8+4` token probe
-- the active semantic path no longer depends on borrowed `Qwen3DecoderLayer` or `DynamicCache`, so the remaining gap is now eager PyTorch math, probe-style staging, and lack of `cuTile/TileIR` kernels
-- a structured gap registry now tracks the remaining code path from borrowed `transformers` semantics to `cuTile/TileIR` kernels on `sm_121`
+- the public remote `cuda.tile 1.1.0` install exposes dtypes up to FP8 in `cuda/tile/_datatype.py`, but not a public `FP4` or `NVFP4` dtype symbol
+- the public remote `tileiras` install does target `sm_121`, so backend code generation target coverage exists even though public frontend FP4 coverage is still unproven
+- the previous `Qwen3-32B BF16` borrowed and semantic runtime loops remain in the repo as legacy reference data, not the active first target
+- those legacy runs produced only about `2 tokens/s` on the remote GB10, which is not a credible starting point for a framework comparison
 
-The next hard gate is lowering the now-working full-model semantic loop from eager PyTorch operators into `cuTile/TileIR` kernels, replacing the dense probe-style cache/layout path with a true residency plan, and only then benchmarking that path against framework baselines.
+The next hard gate is therefore narrower and stricter than before: compile and run one minimal FP4 kernel through the public cuTile-native chain, then map `Qwen3-8B-FP4` metadata, then rebuild the runtime around that smaller contract.
 
 The deeper hypothesis is that, once compatibility is treated as optional instead of mandatory, an agent can spend a bounded token budget to generate a more direct and efficient software path for a specific model-chip pair.
 

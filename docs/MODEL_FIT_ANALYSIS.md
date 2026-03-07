@@ -1,6 +1,6 @@
 # Model Fit Analysis
 
-Date verified: 2026-03-06
+Date verified: 2026-03-07
 
 ## Hardware envelope
 
@@ -13,14 +13,14 @@ That hardware envelope immediately separates models into two groups:
 
 ## Candidate models
 
-### 1. `Qwen/Qwen3-32B`
+### 1. `Qwen/Qwen3-8B` plus `nvidia/Qwen3-8B-FP4`
 
 Why it is attractive:
 
 - dense causal LM
 - standard GQA attention
-- native `transformers` support
-- realistic single-machine fit
+- smaller geometry that is much easier to benchmark on one GB10
+- a clean separation between semantic base and deployment artifact
 - strong current quality among open models
 
 cuTile fit:
@@ -31,6 +31,7 @@ Reason:
 
 - dense transformer blocks with GQA and SwiGLU are the cleanest path for a first kernel catalog
 - no MoE router, no MLA, no DSA-specific sparse path
+- much more credible than the old `Qwen3-32B` path as a first performance target on one GB10
 
 ### 2. `zai-org/glm-4-9b-hf`
 
@@ -70,7 +71,7 @@ Reason:
 
 Why it matters:
 
-- the latest official open-weight GLM-family checkpoint as of 2026-03-06
+- a recent official open-weight GLM-family checkpoint
 
 cuTile fit:
 
@@ -112,7 +113,7 @@ Reason:
 
 ### Best first target if cuTile simplicity is the priority
 
-- `Qwen/Qwen3-32B`
+- `Qwen/Qwen3-8B` semantics with the `nvidia/Qwen3-8B-FP4` deployment artifact
 
 ### Best first target if GLM must remain the first family
 
@@ -125,4 +126,3 @@ Reason:
 - `zai-org/GLM-5-FP8`
 - `deepseek-ai/DeepSeek-V3`
 - `moonshotai/Kimi-K2-Instruct-0905`
-

@@ -6,13 +6,15 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REMOTE_SCRIPT="${REMOTE_SCRIPT:-$ROOT/../remote.sh}"
 REMOTE_HOME="${REMOTE_HOME:-/home/pto/lean}"
 VLLM_VENV="${VLLM_VENV:-$REMOTE_HOME/venv-vllm}"
-MODEL_PATH_FILE="${MODEL_PATH_FILE:-$REMOTE_HOME/models/Qwen__Qwen3-32B.path}"
+MODEL_ID="${MODEL_ID:-Qwen/Qwen3-8B}"
+MODEL_KEY="${MODEL_ID//\//__}"
+MODEL_PATH_FILE="${MODEL_PATH_FILE:-$REMOTE_HOME/models/$MODEL_KEY.path}"
 VLLM_HOST="${VLLM_HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
 DTYPE="${DTYPE:-bfloat16}"
 GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.90}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-4096}"
-SERVED_MODEL_NAME="${SERVED_MODEL_NAME:-qwen3-32b-bf16}"
+SERVED_MODEL_NAME="${SERVED_MODEL_NAME:-qwen3-8b}"
 LOG_DIR="${LOG_DIR:-$REMOTE_HOME/logs}"
 WAIT_SECONDS="${WAIT_SECONDS:-180}"
 source "$ROOT/scripts/remote_helpers.sh"
@@ -44,7 +46,7 @@ for _ in \$(seq 1 $((WAIT_SECONDS / 2))); do \
   sleep 2; \
 done; \
 if [[ \"\$READY\" != \"1\" ]]; then \
-  echo '--- vLLM log tail ---' >&2; \
+  echo \"--- vLLM log tail ---\" >&2; \
   tail -n 80 \"\$LOG_FILE\" >&2 || true; \
   echo \"vLLM server did not become ready in $WAIT_SECONDS seconds\" >&2; \
   exit 1; \

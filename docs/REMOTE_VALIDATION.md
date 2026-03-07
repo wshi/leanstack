@@ -2,6 +2,8 @@
 
 The DGX Spark machine is accessed through `../remote.sh` and treated as the system-of-record for kernel validation.
 
+As of 2026-03-07, the `Qwen3-32B BF16` runtime validations below are legacy reference data. The active target has pivoted to `Qwen3-8B semantics + Qwen3-8B-FP4 artifact`, and the active first gate is FP4 compiler feasibility on `sm_121`.
+
 ## Remote layout
 
 The scripts in this repo create and use:
@@ -17,12 +19,11 @@ The scripts in this repo create and use:
 1. `./scripts/remote_bootstrap.sh`
 2. `./scripts/remote_sync.sh`
 3. `./scripts/remote_verify.sh`
-4. `./scripts/remote_model_probe.sh`
-5. `./scripts/remote_qwen_fetch.sh` for the primary model snapshot path
-6. `./scripts/remote_qwen_stack_probe.sh`
-7. `./scripts/remote_qwen_runtime_loop.sh`
-8. `./scripts/remote_qwen_baseline.sh`
-9. `./scripts/relay_url_to_remote.sh` or `./scripts/push_local_file_to_remote.sh` if the remote machine cannot download an artifact directly
+4. `./scripts/remote_fp4_inventory.sh`
+5. `./scripts/remote_model_probe.sh`
+6. `MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_fetch.sh` for the semantic-base snapshot path
+7. `MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_baseline.sh`
+8. `./scripts/relay_url_to_remote.sh` or `./scripts/push_local_file_to_remote.sh` if the remote machine cannot download an artifact directly
 
 ## What `remote_verify.sh` checks
 
@@ -61,103 +62,50 @@ When the remote machine cannot access a model, wheel, or archive directly:
 
 ## Qwen acquisition workflow
 
-The primary model acquisition path is:
+The primary semantic-base acquisition path is:
 
-1. `./scripts/remote_qwen_fetch.sh`
+1. `MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_fetch.sh`
 2. let the script install `modelscope` remotely if it is missing
 3. store the downloaded snapshot under `/home/pto/lean/models`
-4. read the resolved local snapshot path from `/home/pto/lean/models/Qwen__Qwen3-32B.path`
-5. run `./scripts/remote_qwen_baseline.sh`, which prefers that local snapshot path over the public model id
+4. read the resolved local snapshot path from `/home/pto/lean/models/Qwen__Qwen3-8B.path`
+5. run `MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_baseline.sh`, which prefers that local snapshot path over the public model id
 
 For a low-risk preflight, run:
 
-- `MODEL_ALLOW_PATTERN='*.json' ./scripts/remote_qwen_fetch.sh`
+- `MODEL_ID=Qwen/Qwen3-8B MODEL_ALLOW_PATTERN='*.json' ./scripts/remote_qwen_fetch.sh`
 
 If ModelScope or PyPI becomes unreachable from the remote host, relay a wheel, archive, or extracted model directory from the Mac into `/home/pto/lean/models` and update the path file accordingly.
 
-## Latest confirmed borrowed full runtime result
+For the active FP4 artifact target, relay may be required because the NVIDIA artifact path may not be reachable or mirrored through the same remote workflow.
+
+## FP4 gate status
 
 Date confirmed: 2026-03-07
 
-The following command completed successfully on the remote GB10 machine:
+Remote inspection confirms:
 
-```bash
-python3 experiments/models/qwen_explicit_runtime_loop.py \
-  --model-path /home/pto/lean/models/Qwen/Qwen3-32B \
-  --num-layers 0 \
-  --device cuda:0 \
-  --max-prefill-tokens 8 \
-  --max-new-tokens 4 \
-  --disable-thinking
-```
+- `cuda.tile` version `1.1.0`
+- public dtype registry shows FP16, BF16, TF32, and FP8 entries
+- no visible public `FP4` or `NVFP4` dtype symbol in the installed Python frontend
+- `tileiras --help` includes `--gpu-name=sm_121`
 
-Key confirmed facts:
+Interpretation:
 
-- all `64` decoder layers were materialized
-- output head and final norm were included
-- `prompt_tokens=8`
-- `emitted_tokens=4`
-- `cache_seq_length=12`
-- materialization took about `76.7s`
-- runtime loop time was about `1.79s`
-- runtime-loop throughput was about `2.24 tokens/s`
-- GPU allocation after materialization was about `65.5 GiB`
+- backend targeting for GB10 is visible
+- public frontend FP4 coverage is still unproven
+- the next real validation task is a minimal FP4 compiler probe, not another large BF16 runtime run
 
-This confirms that the repo crossed from a multi-layer probe into a full-model, single-request runtime loop, even though this borrowed mode still used `transformers` layer semantics and cache behavior.
-
-## Latest confirmed full semantic runtime result
+## Legacy runtime references
 
 Date confirmed: 2026-03-07
 
-The following command completed successfully on the remote GB10 machine:
+The repo still contains the following legacy reference facts for `Qwen3-32B BF16`:
 
-```bash
-python3 experiments/models/qwen_explicit_runtime_loop.py \
-  --model-path /home/pto/lean/models/Qwen/Qwen3-32B \
-  --runtime-mode semantic \
-  --num-layers 0 \
-  --device cuda:0 \
-  --max-prefill-tokens 8 \
-  --max-new-tokens 4 \
-  --disable-thinking
-```
+- borrowed full runtime loop on GB10:
+  - about `76.7s` materialization
+  - about `2.24 tokens/s` runtime-loop throughput for the `8+4` probe
+- semantic full runtime loop on GB10:
+  - about `290.7s` materialization
+  - about `1.92 tokens/s` runtime-loop throughput for the same `8+4` probe
 
-Key confirmed facts:
-
-- all `64` decoder layers were materialized in semantic mode
-- the active cache path used `KVBlockManager`, not `DynamicCache`
-- `prompt_tokens=8`
-- `emitted_tokens=4`
-- `cache_seq_length=12`
-- `page_size=16`, `used_pages=1`
-- materialization took about `290.7s`
-- runtime loop time was about `2.09s`
-- runtime-loop throughput was about `1.92 tokens/s`
-- GPU allocation after materialization was about `65.5 GiB`
-
-This is the first remote proof that the active full-model loop can run on adapter-owned Qwen semantics and a leanstack-owned KV cache. It also exposes the next performance problem clearly: semantic ownership is in place, but the path still uses eager PyTorch math and probe-style staging, so it is not yet ready for a fair framework benchmark.
-
-## Latest confirmed semantic block result
-
-Date confirmed: 2026-03-07
-
-The following command completed successfully on the remote GB10 machine:
-
-```bash
-python3 experiments/models/qwen_semantic_block_probe.py \
-  --model-path /home/pto/lean/models/Qwen/Qwen3-32B \
-  --layer-idx 0 \
-  --device cuda:0 \
-  --max-prefill-tokens 8 \
-  --disable-thinking
-```
-
-Key confirmed facts:
-
-- the adapter-owned semantic block and the borrowed block produced the same cache sequence length: `9`
-- the new page-based KV manager reported `page_size=16`, `used_pages=1`, `seq_len=9`
-- forward `max_abs_diff` was `0.03125`
-- prefill `max_abs_diff` was `0.03125`
-- decode `max_abs_diff` was `0.125`
-
-This is the first remote block-level proof that `leanstack` can replace borrowed Qwen layer semantics and `DynamicCache` with its own explicit control surface while staying numerically close to the reference path.
+These runs are useful only as proof that the older explicit path exists and as evidence that the old target is too slow for a meaningful benchmark-first workflow.

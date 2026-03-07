@@ -1,6 +1,6 @@
 # Project Thesis
 
-Date: 2026-03-06
+Date: 2026-03-07
 
 ## Thesis
 
@@ -9,11 +9,12 @@ Date: 2026-03-06
 The project thesis is narrower and harder:
 
 - use a `cuTile -> TileIR -> cubin -> SASS` execution path as the core of the stack
-- target one concrete model first: `Qwen/Qwen3-32B`
+- target one concrete semantic contract first: `Qwen/Qwen3-8B`
+- target one concrete deployment artifact first: `nvidia/Qwen3-8B-FP4`
 - target one concrete hardware class first: Blackwell, currently the remote GB10 / DGX Spark machine
 - target the actual remote compiler surface as `sm_121`, not a vague "future Blackwell" abstraction
 - treat compatibility-driven software complexity as a tax, not a requirement
-- measure whether an agent-built, hardware-near stack can stay materially simpler than the current framework-heavy ecosystem while remaining performance-competitive
+- measure whether an agent-built, hardware-near stack can stay materially simpler than the current framework-heavy ecosystem while also showing a real performance advantage on that fixed contract
 
 ## Central hypothesis
 
@@ -55,29 +56,39 @@ It begins by asking how small the stack can become if:
 - the agent can rewrite code quickly
 - execution-time uncertainty is intentionally removed from everything except the user request
 
-### 2. Qwen3-32B is the first contract
+### 2. Qwen3-8B FP4 is the first contract
 
-The initial system is shaped around the public and remotely verified `Qwen/Qwen3-32B` contract:
+The initial system is now shaped around two linked artifacts:
 
-- dense causal LM
-- 64 transformer layers
-- grouped-query attention with 64 query heads and 8 KV heads
+- semantic base: `Qwen/Qwen3-8B`
+- deployment artifact: `nvidia/Qwen3-8B-FP4`
+
+The intended static contract is:
+
+- 36 transformer layers
+- hidden size 4096
+- grouped-query attention with 32 query heads and 8 KV heads
 - head dimension 128
-- hidden size 5120
-- intermediate size 25600
-- BF16 checkpoint
-- rotary position embedding with `rope_theta=1_000_000`
+- FP4 or NVFP4 linears with explicit scale handling
+- fixed GB10 / `sm_121` target
 
 The intended outcome is that this contract becomes static:
 
 - fixed model geometry
 - fixed tensor layout
+- fixed quantization and dequantization policy
 - fixed page layout
 - fixed kernel set
 - fixed scheduler shape
 - fixed hardware target
 
 The user request should be the only first-class dynamic input.
+
+The first gate is therefore not "run the whole model."
+
+The first gate is:
+
+- prove that the public `cuTile`-native compiler path can emit one real FP4 kernel on `sm_121`
 
 ### 3. Blackwell is the first hardware contract
 
@@ -118,16 +129,23 @@ The intended outcome is that a bounded agent token budget can replace a large am
 
 ### Technical success
 
-- `Qwen/Qwen3-32B` runs end to end on the remote Blackwell machine through `leanstack`
+- the repo proves a public `cuTile`-native FP4 path or explicitly records why it failed
+- `Qwen3-8B-FP4` runs end to end on the remote Blackwell machine through `leanstack`
 - the critical path is inspectable down to TileIR and SASS
 - the stack exposes a small and auditable runtime surface
 - the core path does not rely on framework-managed uncertainty such as automatic placement or CPU offload
 
 ### Comparative success
 
-- `leanstack` is benchmarked against `vLLM` and `SGLang` on the same machine and model profile
+- `leanstack` is benchmarked against exact-format external baselines on the same machine and model profile
+- `vLLM` and `SGLang` remain required comparison points when they can run the same or a clearly labeled equivalent format
 - `llama.cpp` is tracked as a secondary deployment reference when the weight format is not apples-to-apples
 - the result table includes `generated tokens/s`, latency, memory use, process shape, operational complexity, and software-stack size proxies
+
+### Go / no-go success
+
+- if `leanstack` cannot show a real performance or complexity advantage on the fixed `Qwen3-8B-FP4 + GB10` contract, the repo should say so directly
+- if the public `cuTile` path cannot emit the decisive FP4 kernels, that result is part of the research outcome rather than something to hide
 
 ### Research success
 

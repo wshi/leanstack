@@ -11,7 +11,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a baseline Hugging Face causal LM smoke test.")
-    parser.add_argument("--model-id", default="Qwen/Qwen3-32B")
+    parser.add_argument("--model-id", default="Qwen/Qwen3-8B")
     parser.add_argument(
         "--prompt",
         default="Explain why agent-built, model-chip-specific software may beat a compatibility-heavy serving stack.",

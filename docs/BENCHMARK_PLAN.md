@@ -1,10 +1,10 @@
 # Benchmark Plan
 
-Date: 2026-03-06
+Date: 2026-03-07
 
 ## Question
 
-Can a `cuTile`-native runtime tuned for `Qwen/Qwen3-32B` on Blackwell stay much smaller than current inference frameworks while delivering competitive throughput and latency?
+Can a `cuTile`-native runtime tuned for `Qwen3-8B-FP4` on `GB10 / sm_121` stay much smaller than current inference frameworks while delivering a real throughput or latency advantage?
 
 The benchmark is not only about runtime speed.
 
@@ -20,7 +20,7 @@ It is also about whether agent-generated, model-chip-specific software can repla
 
 - `llama.cpp`
 
-`llama.cpp` is important as a compact-systems reference, but it is not automatically an apples-to-apples throughput baseline because `Qwen3-32B` is commonly deployed there through `GGUF` or quantized variants rather than the same BF16 checkpoint used by `vLLM`, `SGLang`, and `leanstack`.
+`llama.cpp` is important as a compact-systems reference, but it is not automatically an apples-to-apples throughput baseline because the active target is an NVIDIA FP4 artifact, not a generic GGUF deployment.
 
 ## Benchmark contract
 
@@ -32,9 +32,11 @@ It is also about whether agent-generated, model-chip-specific software can repla
 
 ### Model
 
-- primary checkpoint: `Qwen/Qwen3-32B`
-- primary precision path: BF16
+- semantic base: `Qwen/Qwen3-8B`
+- primary deployment artifact: `nvidia/Qwen3-8B-FP4`
+- primary precision path: FP4 or NVFP4 linears on the same artifact where possible
 - exact model snapshot and framework versions must be recorded in every report
+- if an external baseline cannot run the exact FP4 artifact, the report must mark the format mismatch explicitly
 
 ### Prompting policy
 
@@ -65,7 +67,7 @@ The research claim also needs non-throughput metrics:
 - dependency count in the serving path
 - number of long-running processes required
 - amount of configuration needed to launch a comparable run
-- code surface that must be touched to specialize the stack for Qwen3-32B on Blackwell
+- code surface that must be touched to specialize the stack for `Qwen3-8B-FP4` on GB10
 - agent token budget spent to reach or revise a runnable path, when that information is available from the working session
 
 These are proxies, not perfect cost measures, but they are necessary if the thesis is that compatibility-heavy stacks carry avoidable overhead.
@@ -100,17 +102,25 @@ These are proxies, not perfect cost measures, but they are necessary if the thes
 - use official stable docs and record process shape
 - treat it as a high-performance framework baseline, not a source of core runtime code
 - note where generality or multi-role architecture appears to add operational cost for this narrower target
+- if the tested format is not the exact NVIDIA FP4 artifact, mark the mismatch and keep the result separate from exact-format conclusions
 
 ### For `SGLang`
 
 - use official stable docs and record enabled features explicitly
 - disable unrelated features unless they are part of the tested profile
-- note which features are irrelevant to the narrow Qwen3-32B + Blackwell target but still shape operational complexity
+- note which features are irrelevant to the narrow `Qwen3-8B-FP4 + GB10` target but still shape operational complexity
+- if the tested format is not the exact NVIDIA FP4 artifact, mark the mismatch and keep the result separate from exact-format conclusions
 
 ### For `llama.cpp`
 
-- separate deployment-complexity comparisons from strict BF16 throughput comparisons when formats differ
+- separate deployment-complexity comparisons from strict throughput comparisons when formats differ
 - use it partly as a compact-systems reference for what a smaller runtime can look like
+
+## Gate before benchmarking
+
+No formal benchmark should be treated as dispositive until the repo clears the FP4 compiler gate:
+
+- if `leanstack` cannot emit at least one real FP4 kernel on `sm_121`, performance comparisons are still mostly about framework readiness, not about the specialized stack thesis
 
 ## Desired output
 

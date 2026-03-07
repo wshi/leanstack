@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a narrow, auditable inference stack for `Qwen/Qwen3-32B` on Blackwell that is centered on three moving parts and explicitly avoids paying broad compatibility costs up front:
+Build a narrow, auditable inference stack for `Qwen3-8B semantics + Qwen3-8B-FP4 deployment artifact` on `GB10 / sm_121` that is centered on three moving parts and explicitly avoids paying broad compatibility costs up front:
 
 1. `compiler`: lowers model-level ops to cuTile and TileIR-backed kernels.
 2. `runtime`: owns request batching, KV cache placement, and kernel dispatch.
@@ -11,7 +11,7 @@ Build a narrow, auditable inference stack for `Qwen/Qwen3-32B` on Blackwell that
 ## Non-goals
 
 - Reproducing vLLM surface area in the first phase.
-- Supporting every model family at once before `Qwen/Qwen3-32B` is stable.
+- Supporting every model family at once before the first `Qwen3-8B-FP4` contract is stable.
 - Supporting every hardware backend behind one generic abstraction.
 - Hiding compiler behavior behind framework magic.
 - Embedding `vLLM`, `SGLang`, `llama.cpp`, or another inference runtime inside the core serving path.
@@ -31,7 +31,7 @@ The current remote compiler target should be treated concretely as `GB10 / sm_12
 That also implies a strict fallback order:
 
 - `cuTile/TileIR` is the default authoring path
-- `PTX` is an escape hatch for missing compiler coverage on a hotspot
+- `PTX` is an escape hatch when the public cuTile frontend cannot yet express a hotspot, especially for FP4
 - `SASS` is a verification artifact, not the main source language
 
 ### 2. Runtime is a small state machine
@@ -50,7 +50,7 @@ Everything else belongs in adapters, tooling, or offline compilation.
 
 Whenever a new layer, interface, or fallback path is proposed, the default question is:
 
-`Is this required for the Qwen3-32B + Blackwell contract, or is it a compatibility tax?`
+`Is this required for the Qwen3-8B-FP4 + GB10 contract, or is it a compatibility tax?`
 
 If it is only a compatibility tax, it should be deferred.
 
@@ -61,6 +61,7 @@ For the first contract, the stack should avoid discovering core execution decisi
 The preferred shape is:
 
 - static model geometry
+- static quantization policy
 - static kernel inventory
 - static memory layout
 - static dispatch order
@@ -73,6 +74,7 @@ If runtime behavior still depends on framework heuristics such as `device_map="a
 Each model family gets an adapter that declares:
 
 - tensor layout
+- quantization and scale policy
 - rotary embedding policy
 - normalization and MLP fusion rules
 - KV cache format
@@ -95,15 +97,16 @@ For the same reason, `transformers` should gradually move from "execution provid
 - acceptable today for tokenizer, config, and semantic cross-checks
 - not acceptable as the long-term owner of the model execution path
 
-### 5. Qwen3-32B and Blackwell define the first contract
+### 5. Semantic base and deployment artifact define the first contract
 
 The initial adapter and runtime should be shaped around the first verified target:
 
-- `Qwen/Qwen3-32B`
+- semantic base: `Qwen/Qwen3-8B`
+- deployment artifact: `nvidia/Qwen3-8B-FP4`
 - dense transformer blocks
-- GQA with 64 query heads and 8 KV heads
-- BF16 weight path
-- Blackwell-class memory and tensor-core behavior
+- GQA with 32 query heads and 8 KV heads
+- explicit FP4 or NVFP4 linears plus scale handling
+- Blackwell-class memory and tensor-core behavior on `sm_121`
 
 This is a deliberate optimization target, not a generic abstraction accident.
 
@@ -113,7 +116,23 @@ That implies a more aggressive simplification rule:
 - no hardware-agnostic placement logic in the first path
 - no hidden decision points beyond those induced by user input length and decode progress
 
-### 5a. Agent regeneration is part of the design
+### 5a. Semantic base and deployment artifact are separate contracts
+
+`leanstack` should not blur together:
+
+- the semantic base model
+- the deployment artifact format
+- the kernel authoring path
+
+For the active target:
+
+- `Qwen/Qwen3-8B` defines geometry and prompt semantics
+- `nvidia/Qwen3-8B-FP4` defines the runtime weight and scale contract
+- the public `cuTile` path must still prove it can express the decisive FP4 kernels
+
+This separation matters because a public model card or a working vendor runtime does not prove the public `leanstack` compiler path is viable.
+
+### 5b. Agent regeneration is part of the design
 
 The stack should be small enough that an agent can reasonably:
 
@@ -156,9 +175,10 @@ The repo intentionally starts with a narrow vertical slice:
 
 1. known-good cuTile kernel bring-up
 2. remote artifact capture
-3. adapter contract for `Qwen/Qwen3-32B`
-4. minimal runtime that can execute one prefill and one decode loop
-5. benchmark comparison against framework baselines and their compatibility-heavy process shape
-6. API layer only after the execution path is stable
+3. FP4 compiler-feasibility gate on `sm_121`
+4. adapter contract for `Qwen3-8B` semantics and `Qwen3-8B-FP4` artifact layout
+5. minimal runtime that can execute one prefill and one decode loop
+6. benchmark comparison against framework baselines and their compatibility-heavy process shape
+7. API layer only after the execution path is stable
 
 This keeps the stack understandable while still targeting a full model run.

@@ -4,8 +4,10 @@ set -o pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REMOTE_SCRIPT="${REMOTE_SCRIPT:-$ROOT/../remote.sh}"
-MODEL_ID="${MODEL_ID:-Qwen/Qwen3-32B}"
-MODEL_SOURCE_FILE="${MODEL_SOURCE_FILE:-}"
+MODEL_ID="${MODEL_ID:-Qwen/Qwen3-8B}"
+REMOTE_HOME="${REMOTE_HOME:-/home/pto/lean}"
+MODEL_KEY="${MODEL_ID//\//__}"
+MODEL_SOURCE_FILE="${MODEL_SOURCE_FILE:-$REMOTE_HOME/models/$MODEL_KEY.path}"
 PROMPT="${PROMPT:-Summarize why an agent-built, Qwen3-on-Blackwell software path may beat a compatibility-heavy serving stack.}"
 PROMPT_FORMAT="${PROMPT_FORMAT:-auto}"
 THINKING_MODE="${THINKING_MODE:-auto}"
