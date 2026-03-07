@@ -20,6 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-new-tokens", type=int, default=64)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--dtype", choices=("auto", "bfloat16"), default="bfloat16")
+    parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--trust-remote-code", action="store_true")
     thinking = parser.add_mutually_exclusive_group()
     thinking.add_argument("--enable-thinking", action="store_true")
@@ -80,13 +81,13 @@ def main() -> int:
     model = AutoModelForCausalLM.from_pretrained(
         args.model_id,
         torch_dtype=resolve_dtype(args.dtype),
-        device_map="auto",
         trust_remote_code=args.trust_remote_code,
     )
+    model = model.to(args.device)
 
     formatted_prompt, resolved_prompt_format = build_prompt(tokenizer, args, thinking_mode)
     inputs = tokenizer(formatted_prompt, return_tensors="pt")
-    model_device = next(model.parameters()).device
+    model_device = torch.device(args.device)
     inputs = {key: value.to(model_device) for key, value in inputs.items()}
     prompt_tokens = int(inputs["input_ids"].shape[-1])
 
