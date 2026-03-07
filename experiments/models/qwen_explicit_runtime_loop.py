@@ -28,6 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run an explicit Qwen3 runtime loop on GPU.")
     parser.add_argument("--model-path", required=True)
     parser.add_argument("--runtime-mode", choices=("borrowed", "semantic"), default="borrowed")
+    parser.add_argument("--benchmark-profile", default="")
     parser.add_argument("--num-layers", type=int, default=0, help="0 means the full model.")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--dtype", choices=("bfloat16", "float16", "float32"), default="bfloat16")
@@ -234,6 +235,7 @@ def main() -> int:
         "num_layers": len(runtime.layer_indices),
         "layer_range": [runtime.layer_indices[0], runtime.layer_indices[-1]] if runtime.layer_indices else [],
         "runtime_mode": args.runtime_mode,
+        "benchmark_profile": args.benchmark_profile or None,
         "device": args.device,
         "dtype": args.dtype,
         "attn_implementation": runtime.config._attn_implementation,

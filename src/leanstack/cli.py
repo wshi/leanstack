@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
+from .benchmark import get_benchmark_profile, list_benchmark_profiles
 from .gap_registry import get_gap_report
 from .model_registry import get_model_spec, list_models
 from .plan import render_plan
@@ -31,6 +33,14 @@ def build_parser() -> argparse.ArgumentParser:
     gaps = subparsers.add_parser("show-gaps", help="Print the implementation gaps for a model.")
     gaps.add_argument("--model", default="qwen")
     gaps.set_defaults(handler=handle_show_gaps)
+
+    bench_profiles = subparsers.add_parser("list-benchmark-profiles", help="List supported benchmark profiles.")
+    bench_profiles.set_defaults(handler=handle_list_benchmark_profiles)
+
+    bench_profile = subparsers.add_parser("show-benchmark-profile", help="Print one benchmark profile.")
+    bench_profile.add_argument("--profile", default="single_stream_short")
+    bench_profile.add_argument("--format", choices=("text", "json", "shell"), default="text")
+    bench_profile.set_defaults(handler=handle_show_benchmark_profile)
 
     remote_env = subparsers.add_parser("remote-env", help="Probe the configured remote environment.")
     remote_env.add_argument("--remote-script", type=Path, default=default_remote_script())
@@ -64,6 +74,23 @@ def handle_show_contract(args: argparse.Namespace) -> int:
 
 def handle_show_gaps(args: argparse.Namespace) -> int:
     print(get_gap_report(args.model).render())
+    return 0
+
+
+def handle_list_benchmark_profiles(_: argparse.Namespace) -> int:
+    for profile in list_benchmark_profiles():
+        print(profile.render())
+    return 0
+
+
+def handle_show_benchmark_profile(args: argparse.Namespace) -> int:
+    profile = get_benchmark_profile(args.profile)
+    if args.format == "json":
+        print(json.dumps(profile.as_payload(), indent=2))
+    elif args.format == "shell":
+        print(profile.render_shell())
+    else:
+        print(profile.render())
     return 0
 
 
