@@ -15,11 +15,11 @@ This repo explores a different path with five constraints:
 
 1. The execution path must stay explicit down to `cuTile -> TileIR -> cubin -> SASS`.
 2. The runtime must stay small enough that an agent can regenerate and modify it cheaply.
-3. The first contract is a model-chip pair, `Qwen/Qwen3-8B + BF16 checkpoint` on `GB10 / sm_121`, not "all models on all hardware."
+3. The first contract is a model-chip pair, `Qwen/Qwen3-1.7B-Base + BF16 checkpoint` on `GB10 / sm_121`, not "all models on all hardware."
 4. `vLLM`, `SGLang`, `llama.cpp`, and similar systems are compatibility-heavy baselines to compare against, not runtime dependencies.
 5. Remote validation on the DGX Spark machine is part of the development loop, not an afterthought.
 
-In the strongest form of this thesis, the only meaningful dynamic input should be the user request payload. Model geometry, chip target, precision policy, memory layout, kernel inventory, and dispatch policy should all be fixed by the `Qwen3-8B BF16 + GB10` contract. FP8 and FP4 stay deferred until the executable precision gate turns positive for them on the public toolchain.
+In the strongest form of this thesis, the only meaningful dynamic input should be the user request payload. Model geometry, chip target, precision policy, memory layout, kernel inventory, and dispatch policy should all be fixed by the `Qwen3-1.7B-Base BF16 + GB10` contract. Backend choice is still explicit, but it is selected for throughput, not aesthetics. FP8 and FP4 stay deferred until they clearly beat the BF16 path.
 
 ## Scope
 
@@ -28,8 +28,9 @@ Stage 0 in this repo does five concrete things:
 1. Defines the project thesis for an agent-built, model-chip-specific LLM stack.
 2. Provides local and remote tooling to validate the cuTile -> TileIR -> cubin -> SASS path.
 3. Keeps precision choice explicit through an executable BF16 / FP8 / FP4 gate on the remote machine.
-4. Rebuilds the runtime around `Qwen/Qwen3-8B` BF16 instead of the legacy `Qwen3-32B` reference path.
-5. Defines the benchmark contract against `vLLM`, `SGLang`, and other external baselines, including both runtime efficiency and software-stack complexity.
+4. Rebuilds the runtime around `Qwen/Qwen3-1.7B-Base` BF16 instead of the legacy `Qwen3-32B` reference path.
+5. Allows `cuTile`, Triton, CUTLASS, or PTX on the hot path as long as ownership stays inside `leanstack` and the backend choice is explicit.
+6. Defines the benchmark contract against `vLLM`, `SGLang`, and other external baselines, including both runtime efficiency and software-stack complexity.
 
 ## Repository layout
 
@@ -73,8 +74,8 @@ PYTHONPATH=src python3 -m leanstack.cli show-gaps --model qwen
 ./scripts/remote_precision_gate.sh
 ./scripts/remote_fp4_gate.sh
 ./scripts/remote_model_probe.sh
-MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_fetch.sh
-MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_baseline.sh
+MODEL_ID=Qwen/Qwen3-1.7B-Base ./scripts/remote_qwen_fetch.sh
+MODEL_ID=Qwen/Qwen3-1.7B-Base ./scripts/remote_qwen_baseline.sh
 ```
 
 If remote Python runtime packages are missing:
@@ -90,7 +91,7 @@ If the remote machine cannot access a site directly, download on the Mac and rel
 ./scripts/push_local_file_to_remote.sh <local-path> <remote-path>
 ```
 
-`remote_qwen_fetch.sh` installs `modelscope` on the remote host if needed, downloads a Qwen snapshot into `/home/pto/lean/models`, and records the resolved local snapshot path so `remote_qwen_baseline.sh` can prefer the local copy over a public model id. For the active pivot, use it first for the `Qwen/Qwen3-8B` BF16 contract.
+`remote_qwen_fetch.sh` installs `modelscope` on the remote host if needed, downloads a Qwen snapshot into `/home/pto/lean/models`, and records the resolved local snapshot path so `remote_qwen_baseline.sh` can prefer the local copy over a public model id. For the active pivot, use it first for the `Qwen/Qwen3-1.7B-Base` BF16 contract.
 
 For a metadata-only preflight before downloading the full checkpoint:
 
@@ -105,8 +106,8 @@ As of 2026-03-07, the active milestone is no longer "run the largest possible Qw
 The active milestone is:
 
 - keep the public BF16 `cuTile` path green on `GB10 / sm_121`
-- rebuild the runtime around `Qwen/Qwen3-8B` BF16 with adapter-owned placement, KV state, and kernel boundaries
-- benchmark only after that 8B BF16 runtime slice exists
+- rebuild the runtime around `Qwen/Qwen3-1.7B-Base` BF16 with adapter-owned placement, KV state, and kernel boundaries
+- benchmark only after that 1.7B BF16 runtime slice exists
 
 Current facts:
 
@@ -115,12 +116,13 @@ Current facts:
 - the executable remote precision gate wrote `/home/pto/lean/artifacts/precision-gate/precision_gate_20260307T083727Z.json`
 - that gate currently recommends `bfloat16` as the active public-cuTile precision on `sm_121`
 - BF16 compiles and runs through the public `cuTile` path on the remote machine
+- a metadata-only remote fetch for `Qwen/Qwen3-1.7B-Base` succeeded and wrote `/home/pto/lean/models/Qwen__Qwen3-1.7B-Base.path`
 - the current float8 probe reaches the compiler but fails TileIR verification for both public FP8 dtypes
 - the narrower FP4 sub-gate remains blocked because the public `cuda.tile` frontend does not expose a complete FP4 authoring surface
 - the previous `Qwen3-32B BF16` borrowed and semantic runtime loops remain in the repo as legacy reference data, not the active first target
 - those legacy runs produced only about `2 tokens/s` on the remote GB10, which is not a credible starting point for a framework comparison
 
-The next hard gate is therefore different from the earlier FP4 pivot: own the `Qwen3-8B` BF16 checkpoint contract, rebuild the runtime around that smaller model, and only then benchmark against exact-format BF16 baselines.
+The next hard gate is therefore different from the earlier FP4 pivot: own the `Qwen3-1.7B-Base` BF16 checkpoint contract, rebuild the runtime around that smaller model, and only then benchmark against exact-format BF16 baselines.
 
 The deeper hypothesis is that, once compatibility is treated as optional instead of mandatory, an agent can spend a bounded token budget to generate a more direct and efficient software path for a specific model-chip pair.
 

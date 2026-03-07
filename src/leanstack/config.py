@@ -31,6 +31,7 @@ class ModelSpec:
     remote_model_key: str | None = None
     compile_gate: str | None = None
     legacy_reference: str | None = None
+    backend_policy: tuple[str, ...] = field(default_factory=tuple)
     bring_up_sequence: tuple[str, ...] = field(default_factory=tuple)
     static_contract: tuple[str, ...] = field(default_factory=tuple)
     dynamic_inputs: tuple[str, ...] = field(default_factory=tuple)

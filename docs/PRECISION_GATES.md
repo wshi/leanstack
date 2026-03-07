@@ -10,7 +10,7 @@ Instead, it should record a machine-checked answer for the active remote target:
 
 - hardware: `NVIDIA GB10 / sm_121`
 - public compiler stack: `cuda.tile` plus `tileiras`
-- model target: `Qwen/Qwen3-8B`
+- model target: `Qwen/Qwen3-1.7B-Base`
 
 ## Current decision
 
@@ -71,6 +71,6 @@ Confirmed result:
 
 ## Current policy
 
-1. Treat `Qwen/Qwen3-8B` BF16 as the active first deployment contract.
+1. Treat `Qwen/Qwen3-1.7B-Base` BF16 as the active first deployment contract.
 2. Keep rerunning the precision gate when the probe, compiler, or remote environment changes.
 3. Do not restart an FP8 or FP4 runtime push until the gate turns positive for that precision, or until a narrowly scoped PTX wedge is explicitly adopted.

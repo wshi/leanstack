@@ -8,9 +8,9 @@ Date: 2026-03-07
 
 The project thesis is narrower and harder:
 
-- use a `cuTile -> TileIR -> cubin -> SASS` execution path as the core of the stack
-- target one concrete semantic contract first: `Qwen/Qwen3-8B`
-- target one concrete deployment contract first: the public `Qwen/Qwen3-8B` BF16 checkpoint
+- use a hardware-near execution path as the core of the stack and keep backend choice explicit
+- target one concrete semantic contract first: `Qwen/Qwen3-1.7B-Base`
+- target one concrete deployment contract first: the public `Qwen/Qwen3-1.7B-Base` BF16 checkpoint
 - target one concrete hardware class first: Blackwell, currently the remote GB10 / DGX Spark machine
 - target the actual remote compiler surface as `sm_121`, not a vague "future Blackwell" abstraction
 - treat compatibility-driven software complexity as a tax, not a requirement
@@ -56,18 +56,18 @@ It begins by asking how small the stack can become if:
 - the agent can rewrite code quickly
 - execution-time uncertainty is intentionally removed from everything except the user request
 
-### 2. Qwen3-8B BF16 is the first contract
+### 2. Qwen3-1.7B-Base BF16 is the first contract
 
 The initial system is now shaped around one active deployment contract and two deferred precision investigations:
 
-- active semantic and checkpoint contract: `Qwen/Qwen3-8B` BF16
+- active semantic and checkpoint contract: `Qwen/Qwen3-1.7B-Base` BF16
 - deferred narrow-precision investigations: public FP8 and FP4 authoring on `sm_121`
 
 The intended static contract is:
 
-- 36 transformer layers
-- hidden size 4096
-- grouped-query attention with 32 query heads and 8 KV heads
+- 28 transformer layers
+- hidden size 2048
+- grouped-query attention with 16 query heads and 8 KV heads
 - head dimension 128
 - BF16 linears and activations on the first path
 - fixed GB10 / `sm_121` target
@@ -104,8 +104,9 @@ That means:
 
 That hardware contract also defines the preferred compiler policy:
 
-- mainline: `cuTile -> TileIR -> cubin`
-- fallback: `PTX` only when compiler coverage is the blocker for a decisive hotspot
+- preferred path: `cuTile -> TileIR -> cubin` when it is competitive
+- throughput-first alternatives: Triton or CUTLASS when they win a decisive kernel
+- fallback: `PTX` only when higher-level backends still miss the hot path
 - ground truth: inspect `SASS`, but do not make direct SASS authoring the default path
 
 ### 4. Agentic development is part of the point
@@ -130,9 +131,9 @@ The intended outcome is that a bounded agent token budget can replace a large am
 
 ### Technical success
 
-- the repo keeps a public `cuTile`-native BF16 path running on the remote GB10
+- the repo keeps at least one explicit, owned BF16 path running on the remote GB10 and can connect hot kernels back to `cuTile` where it is competitive
 - the repo explicitly records why FP8 and FP4 are still blocked on the public stack
-- `Qwen3-8B` BF16 runs end to end on the remote Blackwell machine through `leanstack`
+- `Qwen3-1.7B-Base` BF16 runs end to end on the remote Blackwell machine through `leanstack`
 - the critical path is inspectable down to TileIR and SASS
 - the stack exposes a small and auditable runtime surface
 - the core path does not rely on framework-managed uncertainty such as automatic placement or CPU offload
@@ -146,7 +147,7 @@ The intended outcome is that a bounded agent token budget can replace a large am
 
 ### Go / no-go success
 
-- if `leanstack` cannot show a real performance or complexity advantage on the fixed `Qwen3-8B BF16 + GB10` contract, the repo should say so directly
+- if `leanstack` cannot show a real performance or complexity advantage on the fixed `Qwen3-1.7B-Base BF16 + GB10` contract, the repo should say so directly
 - if the public `cuTile` path cannot clear FP8 or FP4 later, that result is part of the research outcome rather than something to hide
 
 ### Research success

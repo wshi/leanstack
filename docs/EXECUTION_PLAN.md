@@ -33,7 +33,7 @@ Exit gate:
 
 Deliverables:
 
-- semantic contract for `Qwen/Qwen3-8B`
+- semantic contract for `Qwen/Qwen3-1.7B-Base`
 - checkpoint contract for the public BF16 snapshot
 - explicit tensor mapping for BF16 linears and residual paths
 - explicit record of which generic framework features are being deferred as compatibility tax
@@ -46,7 +46,7 @@ Exit gate:
 
 Target:
 
-- `Qwen3-8B` BF16 on `GB10 / sm_121`, with a second-family adapter after the Qwen path is stable
+- `Qwen3-1.7B-Base` BF16 on `GB10 / sm_121`, with a second-family adapter after the Qwen path is stable
 
 Deliverables:
 
@@ -59,7 +59,7 @@ Deliverables:
 
 Exit gate:
 
-- single-request prefill and decode execute for `Qwen3-8B` BF16 on the remote machine
+- single-request prefill and decode execute for `Qwen3-1.7B-Base` BF16 on the remote machine
 
 ## Phase 4: Benchmark Against Framework Baselines
 
@@ -73,7 +73,7 @@ Deliverables:
 
 Exit gate:
 
-- a first comparison table exists for a comparable `Qwen3-8B` BF16 profile on the same machine, including a go / no-go conclusion
+- a first comparison table exists for a comparable `Qwen3-1.7B-Base` BF16 profile on the same machine, including a go / no-go conclusion
 
 ## Phase 5: Minimal Serving Surface
 
@@ -86,11 +86,11 @@ Deliverables:
 
 Exit gate:
 
-- remote machine serves `Qwen3-8B` BF16 through the new stack after the benchmark contract is stable
+- remote machine serves `Qwen3-1.7B-Base` BF16 through the new stack after the benchmark contract is stable
 
 ## Current blockers to clear
 
-1. Retarget the active runtime from the legacy `Qwen3-32B` work to `Qwen3-8B` BF16.
-2. Separate `Qwen3-8B` semantic ownership from BF16 checkpoint ownership.
+1. Retarget the active runtime from the legacy `Qwen3-32B` work to `Qwen3-1.7B-Base` BF16.
+2. Separate `Qwen3-1.7B-Base` semantic ownership from BF16 checkpoint ownership.
 3. Define the exact-format BF16 benchmark contract before rebuilding the larger runtime.
 4. Keep the legacy `Qwen3-32B BF16` path as reference data only, not as the active optimization target.

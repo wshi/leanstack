@@ -46,6 +46,10 @@ class RuntimeBlueprint:
         lines.append(f"DType: {self.model.dtype}")
         if self.model.compile_gate:
             lines.append(f"Compile gate: {self.model.compile_gate}")
+        if self.model.backend_policy:
+            lines.append("Backend policy:")
+            for item in self.model.backend_policy:
+                lines.append(f"- {item}")
         lines.append("Required kernels:")
         for kernel in self.model.required_kernels:
             lines.append(f"- {kernel}")
@@ -67,6 +71,10 @@ class StaticInferenceContract:
         lines.append("Fixed:")
         for item in self.model.static_contract:
             lines.append(f"- {item}")
+        if self.model.backend_policy:
+            lines.append("Backend policy:")
+            for item in self.model.backend_policy:
+                lines.append(f"- {item}")
         lines.append("Dynamic:")
         for item in self.model.dynamic_inputs:
             lines.append(f"- {item}")

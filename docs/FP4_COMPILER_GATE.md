@@ -12,7 +12,7 @@ Date verified: 2026-03-07
 
 That pivot only makes sense if the public `cuTile` stack can actually express and compile the decisive FP4 kernels.
 
-As of 2026-03-07, this is no longer the active first-format target. The active mainline is `Qwen/Qwen3-8B` BF16, and this document remains as a negative sub-gate for the deferred FP4 route.
+As of 2026-03-07, this is no longer the active first-format target. The active mainline is `Qwen/Qwen3-1.7B-Base` BF16, and this document remains as a negative sub-gate for the deferred FP4 route.
 
 ## What is already true
 

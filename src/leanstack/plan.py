@@ -23,18 +23,18 @@ DEFAULT_PHASES: tuple[PlanPhase, ...] = (
     ),
     PlanPhase(
         name="Phase 2",
-        goal="Map Qwen3-8B BF16 checkpoint metadata into an adapter-owned contract and keep deferred compatibility features explicit.",
-        exit_gate="The repo can parse the Qwen3-8B BF16 checkpoint contract without a monolithic runtime.",
+        goal="Map Qwen3-1.7B-Base BF16 checkpoint metadata into an adapter-owned contract and keep deferred compatibility features explicit.",
+        exit_gate="The repo can parse the Qwen3-1.7B-Base BF16 checkpoint contract without a monolithic runtime.",
     ),
     PlanPhase(
         name="Phase 3",
-        goal="Stand up a small Blackwell-first runtime for Qwen3-8B BF16 once the compiler and checkpoint contracts are proven.",
-        exit_gate="Single-request prefill and decode execute for the Qwen3-8B BF16 target on the remote machine.",
+        goal="Stand up a throughput-first runtime for Qwen3-1.7B-Base BF16 once the precision and checkpoint contracts are proven.",
+        exit_gate="Single-request prefill and decode execute for the Qwen3-1.7B-Base BF16 target on the remote machine.",
     ),
     PlanPhase(
         name="Phase 4",
         goal="Benchmark leanstack against exact-format external baselines and stop if the specialized stack does not show a real advantage.",
-        exit_gate="A first comparison table exists for a comparable Qwen3-8B BF16 profile on the same machine, including complexity proxies and a go/no-go conclusion.",
+        exit_gate="A first comparison table exists for a comparable Qwen3-1.7B-Base BF16 profile on the same machine, including complexity proxies and a go/no-go conclusion.",
     ),
     PlanPhase(
         name="Phase 5",

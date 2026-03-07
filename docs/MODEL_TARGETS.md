@@ -4,29 +4,31 @@ Date verified: 2026-03-07
 
 ## Primary target
 
-- semantic base: `Qwen/Qwen3-8B`
-- active deployment contract: the public `Qwen/Qwen3-8B` BF16 checkpoint
+- semantic base: `Qwen/Qwen3-1.7B-Base`
+- active deployment contract: the public `Qwen/Qwen3-1.7B-Base` BF16 checkpoint
 
 Primary source:
 
-- `https://huggingface.co/Qwen/Qwen3-8B`
+- `https://huggingface.co/Qwen/Qwen3-1.7B-Base`
 
 Why it is the first target:
 
 - dense causal LM
 - standard grouped-query attention path
 - much smaller and more benchmarkable than the legacy `Qwen3-32B` path on one GB10
+- more throughput-friendly than the earlier 8B pivot
 - simpler cuTile kernel decomposition than frontier MoE and MLA models
 - more credible as a first performance target because the model is small enough to avoid a trivial throughput collapse
 - directly tests the thesis that a fixed model-chip contract can justify a much narrower runtime
 - the active precision gate already clears BF16 on the public toolchain
 
-Validated semantic configuration snapshot from the public `Qwen/Qwen3-8B` contract:
+Validated semantic configuration snapshot from the public `Qwen/Qwen3-1.7B-Base` contract:
 
-- 36 layers
-- hidden size 4096
-- 32 attention heads and 8 KV heads
+- 28 layers
+- hidden size 2048
+- 16 attention heads and 8 KV heads
 - head dimension 128
+- 32768 context length
 - grouped-query attention
 - Qwen3 chat / thinking controls remain part of the tokenizer or prompt contract, not the core kernel contract
 
@@ -39,9 +41,10 @@ Checkpoint note:
 
 Current blocker:
 
-- the runtime still needs to be retargeted from the legacy `Qwen3-32B` work to the smaller 8B geometry
+- the runtime still needs to be retargeted from the legacy `Qwen3-32B` work to the smaller 1.7B geometry
 - the current FP8 probe is still blocked at TileIR verification
 - the current FP4 route is still blocked in the public frontend
+- the throughput-first backend policy still needs to be turned into real hot-path kernels
 
 First hard gate:
 
@@ -84,7 +87,7 @@ Why it is deferred:
 
 ### Baseline success
 
-- remote machine can acquire `Qwen/Qwen3-8B` directly or by relay
+- remote machine can acquire `Qwen/Qwen3-1.7B-Base` directly or by relay
 - one prompt can run through a simple Hugging Face semantic baseline for correctness
 - one minimal BF16 kernel can run through the public compiler path on `sm_121`
 

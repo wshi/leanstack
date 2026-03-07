@@ -85,13 +85,13 @@ Date verified: 2026-03-07
 
 ## Target model and target hardware
 
-- [Qwen/Qwen3-8B model card](https://huggingface.co/Qwen/Qwen3-8B)
-  - Primary public reference for the active semantic and BF16 checkpoint target, including thinking / non-thinking usage guidance.
+- [Qwen/Qwen3-1.7B-Base model card](https://huggingface.co/Qwen/Qwen3-1.7B-Base)
+  - Primary public reference for the active semantic and BF16 checkpoint target, including the small dense geometry used for the throughput-first pivot.
 
 - [nvidia/Qwen3-8B-FP4 model card](https://huggingface.co/nvidia/Qwen3-8B-FP4)
   - Secondary reference for the deferred FP4 route and for the negative FP4 gate discussion.
 
-- [Qwen/Qwen3-8B on ModelScope](https://www.modelscope.cn/models/Qwen/Qwen3-8B)
+- [Qwen/Qwen3-1.7B-Base on ModelScope](https://www.modelscope.cn/models/Qwen/Qwen3-1.7B-Base)
   - Primary semantic-base acquisition reference when the remote machine can reach ModelScope more reliably than Hugging Face.
 
 - [NVIDIA Blackwell architecture](https://www.nvidia.com/en-us/data-center/technologies/blackwell-architecture/)

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a narrow, auditable inference stack for `Qwen/Qwen3-8B` BF16 on `GB10 / sm_121` that is centered on three moving parts and explicitly avoids paying broad compatibility costs up front:
+Build a narrow, auditable inference stack for `Qwen/Qwen3-1.7B-Base` BF16 on `GB10 / sm_121` that is centered on three moving parts and explicitly avoids paying broad compatibility costs up front:
 
 1. `compiler`: lowers model-level ops to cuTile and TileIR-backed kernels.
 2. `runtime`: owns request batching, KV cache placement, and kernel dispatch.
@@ -11,7 +11,7 @@ Build a narrow, auditable inference stack for `Qwen/Qwen3-8B` BF16 on `GB10 / sm
 ## Non-goals
 
 - Reproducing vLLM surface area in the first phase.
-- Supporting every model family at once before the first `Qwen3-8B BF16` contract is stable.
+- Supporting every model family at once before the first `Qwen3-1.7B-Base` BF16 contract is stable.
 - Supporting every hardware backend behind one generic abstraction.
 - Hiding compiler behavior behind framework magic.
 - Embedding `vLLM`, `SGLang`, `llama.cpp`, or another inference runtime inside the core serving path.
@@ -28,10 +28,11 @@ If a path cannot be inspected at this level, it does not belong in the core stac
 
 The current remote compiler target should be treated concretely as `GB10 / sm_121`, not as an abstract Blackwell placeholder.
 
-That also implies a strict fallback order:
+That also implies a strict backend order:
 
-- `cuTile/TileIR` is the default authoring path
-- `PTX` is an escape hatch when the public cuTile frontend cannot yet express a hotspot, especially for future FP8 or FP4 work
+- `cuTile/TileIR` is preferred when it is competitive and keeps the hot path inspectable
+- Triton or CUTLASS are acceptable when they materially improve tokens/s on decisive kernels
+- `PTX` is an escape hatch when higher-level backends still cannot express or win the hotspot
 - `SASS` is a verification artifact, not the main source language
 
 ### 2. Runtime is a small state machine
@@ -50,7 +51,7 @@ Everything else belongs in adapters, tooling, or offline compilation.
 
 Whenever a new layer, interface, or fallback path is proposed, the default question is:
 
-`Is this required for the Qwen3-8B BF16 + GB10 contract, or is it a compatibility tax?`
+`Is this required for the Qwen3-1.7B-Base BF16 + GB10 contract, or is it a compatibility tax?`
 
 If it is only a compatibility tax, it should be deferred.
 
@@ -101,10 +102,10 @@ For the same reason, `transformers` should gradually move from "execution provid
 
 The initial adapter and runtime should be shaped around the first verified target:
 
-- semantic contract: `Qwen/Qwen3-8B`
-- active deployment contract: the public BF16 checkpoint for `Qwen/Qwen3-8B`
+- semantic contract: `Qwen/Qwen3-1.7B-Base`
+- active deployment contract: the public BF16 checkpoint for `Qwen/Qwen3-1.7B-Base`
 - dense transformer blocks
-- GQA with 32 query heads and 8 KV heads
+- GQA with 16 query heads and 8 KV heads
 - explicit BF16 linears
 - Blackwell-class memory and tensor-core behavior on `sm_121`
 
@@ -127,7 +128,7 @@ That implies a more aggressive simplification rule:
 
 For the active target:
 
-- `Qwen/Qwen3-8B` defines geometry and prompt semantics
+- `Qwen/Qwen3-1.7B-Base` defines geometry and prompt semantics
 - the public BF16 checkpoint defines the active runtime weight contract
 - the precision gate defines whether FP8 or FP4 can become a later deployment contract
 
@@ -177,7 +178,7 @@ The repo intentionally starts with a narrow vertical slice:
 1. known-good cuTile kernel bring-up
 2. remote artifact capture
 3. executable precision gate on `sm_121`
-4. adapter contract for `Qwen3-8B` semantics and BF16 checkpoint layout
+4. adapter contract for `Qwen3-1.7B-Base` semantics and BF16 checkpoint layout
 5. minimal runtime that can execute one prefill and one decode loop
 6. benchmark comparison against framework baselines and their compatibility-heavy process shape
 7. API layer only after the execution path is stable

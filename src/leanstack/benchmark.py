@@ -9,8 +9,8 @@ from typing import Any
 
 def _long_prefill_prompt() -> str:
     clause = (
-        "A fixed Qwen3-8B-BF16 and GB10 contract removes runtime discovery, avoids compatibility heuristics, "
-        "and turns inference into explicit residency, cache, and kernel decisions."
+        "A fixed Qwen3-1.7B-Base and GB10 contract removes runtime discovery, minimizes compatibility heuristics, "
+        "and lets an agent choose the fastest owned kernel path for each hot stage."
     )
     return " ".join(clause for _ in range(96))
 

@@ -30,7 +30,7 @@ MODELSCOPE_SPEC=\"$MODELSCOPE_SPEC\"; \
 VENV_ACTIVATE=\"$VENV_ACTIVATE\"; \
 mkdir -p \"\$MODEL_CACHE_DIR\"; \
 if [[ -f \"\$VENV_ACTIVATE\" ]]; then source \"\$VENV_ACTIVATE\"; fi; \
-python3 -c \"import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('modelscope') else 1)\" || python3 -m pip install \"\$MODELSCOPE_SPEC\"; \
+python3 -c \"import importlib.util, sys; sys.exit(0 if importlib.util.find_spec(\\\"modelscope\\\") else 1)\" || python3 -m pip install \"\$MODELSCOPE_SPEC\"; \
 FETCH_ARGS=(--model-id \"\$MODEL_ID\" --cache-dir \"\$MODEL_CACHE_DIR\" --path-file \"\$MODEL_PATH_FILE\"); \
 if [[ -n \"\$MODEL_REVISION\" ]]; then FETCH_ARGS+=(--revision \"\$MODEL_REVISION\"); fi; \
 if [[ -n \"\$MODEL_ALLOW_PATTERN\" ]]; then FETCH_ARGS+=(--allow-pattern \"\$MODEL_ALLOW_PATTERN\"); fi; \

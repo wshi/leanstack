@@ -2,7 +2,7 @@
 
 The DGX Spark machine is accessed through `../remote.sh` and treated as the system-of-record for kernel validation.
 
-As of 2026-03-07, the `Qwen3-32B BF16` runtime validations below are legacy reference data. The active target has pivoted to `Qwen/Qwen3-8B` BF16, and the active first gate is the executable precision gate on `sm_121`.
+As of 2026-03-07, the `Qwen3-32B BF16` runtime validations below are legacy reference data. The active target has pivoted to `Qwen/Qwen3-1.7B-Base` BF16, and the active first gate is the executable precision gate on `sm_121`.
 
 ## Remote layout
 
@@ -23,8 +23,8 @@ The scripts in this repo create and use:
 5. `./scripts/remote_precision_gate.sh`
 6. `./scripts/remote_fp4_gate.sh`
 7. `./scripts/remote_model_probe.sh`
-8. `MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_fetch.sh` for the semantic-base snapshot path
-9. `MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_baseline.sh`
+8. `MODEL_ID=Qwen/Qwen3-1.7B-Base ./scripts/remote_qwen_fetch.sh` for the semantic-base snapshot path
+9. `MODEL_ID=Qwen/Qwen3-1.7B-Base ./scripts/remote_qwen_baseline.sh`
 10. `./scripts/relay_url_to_remote.sh` or `./scripts/push_local_file_to_remote.sh` if the remote machine cannot download an artifact directly
 
 ## What `remote_verify.sh` checks
@@ -66,17 +66,22 @@ When the remote machine cannot access a model, wheel, or archive directly:
 
 The primary semantic-base acquisition path is:
 
-1. `MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_fetch.sh`
+1. `MODEL_ID=Qwen/Qwen3-1.7B-Base ./scripts/remote_qwen_fetch.sh`
 2. let the script install `modelscope` remotely if it is missing
 3. store the downloaded snapshot under `/home/pto/lean/models`
-4. read the resolved local snapshot path from `/home/pto/lean/models/Qwen__Qwen3-8B.path`
-5. run `MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_baseline.sh`, which prefers that local snapshot path over the public model id
+4. read the resolved local snapshot path from `/home/pto/lean/models/Qwen__Qwen3-1.7B-Base.path`
+5. run `MODEL_ID=Qwen/Qwen3-1.7B-Base ./scripts/remote_qwen_baseline.sh`, which prefers that local snapshot path over the public model id
 
 For a low-risk preflight, run:
 
-- `MODEL_ID=Qwen/Qwen3-8B MODEL_ALLOW_PATTERN='*.json' ./scripts/remote_qwen_fetch.sh`
+- `MODEL_ID=Qwen/Qwen3-1.7B-Base MODEL_ALLOW_PATTERN='*.json' ./scripts/remote_qwen_fetch.sh`
 
 If ModelScope or PyPI becomes unreachable from the remote host, relay a wheel, archive, or extracted model directory from the Mac into `/home/pto/lean/models` and update the path file accordingly.
+
+Confirmed on 2026-03-07:
+
+- metadata-only preflight for `Qwen/Qwen3-1.7B-Base` succeeded
+- path file written to `/home/pto/lean/models/Qwen__Qwen3-1.7B-Base.path`
 
 ## Precision gate status
 

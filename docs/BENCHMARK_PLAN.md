@@ -4,7 +4,7 @@ Date: 2026-03-07
 
 ## Question
 
-Can a `cuTile`-native runtime tuned for `Qwen/Qwen3-8B` BF16 on `GB10 / sm_121` stay much smaller than current inference frameworks while delivering a real throughput or latency advantage?
+Can a throughput-first, agent-owned runtime tuned for `Qwen/Qwen3-1.7B-Base` BF16 on `GB10 / sm_121` stay much smaller than current inference frameworks while delivering a real throughput advantage?
 
 The benchmark is not only about runtime speed.
 
@@ -32,11 +32,12 @@ It is also about whether agent-generated, model-chip-specific software can repla
 
 ### Model
 
-- semantic base: `Qwen/Qwen3-8B`
-- primary deployment contract: the public `Qwen/Qwen3-8B` BF16 checkpoint
+- semantic base: `Qwen/Qwen3-1.7B-Base`
+- primary deployment contract: the public `Qwen/Qwen3-1.7B-Base` BF16 checkpoint
 - primary precision path: BF16 on the same checkpoint for every system under test where possible
 - exact model snapshot and framework versions must be recorded in every report
 - if an external baseline cannot run the exact BF16 checkpoint or a byte-identical local copy, the report must mark the format mismatch explicitly
+- if `leanstack` uses a backend other than `cuTile` for a hot kernel, the report must record that backend explicitly
 
 ### Prompting policy
 
@@ -67,7 +68,7 @@ The research claim also needs non-throughput metrics:
 - dependency count in the serving path
 - number of long-running processes required
 - amount of configuration needed to launch a comparable run
-- code surface that must be touched to specialize the stack for `Qwen3-8B` BF16 on GB10
+- code surface that must be touched to specialize the stack for `Qwen3-1.7B-Base` BF16 on GB10
 - agent token budget spent to reach or revise a runnable path, when that information is available from the working session
 
 These are proxies, not perfect cost measures, but they are necessary if the thesis is that compatibility-heavy stacks carry avoidable overhead.
@@ -108,7 +109,7 @@ These are proxies, not perfect cost measures, but they are necessary if the thes
 
 - use official stable docs and record enabled features explicitly
 - disable unrelated features unless they are part of the tested profile
-- note which features are irrelevant to the narrow `Qwen3-8B BF16 + GB10` target but still shape operational complexity
+- note which features are irrelevant to the narrow `Qwen3-1.7B-Base BF16 + GB10` target but still shape operational complexity
 - if the tested format is not the exact BF16 checkpoint, mark the mismatch and keep the result separate from exact-format conclusions
 
 ### For `llama.cpp`

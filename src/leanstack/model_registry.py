@@ -8,22 +8,31 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         key="qwen",
         family="Qwen-family",
         loader_hint=(
-            "First target: reset to Qwen3-8B BF16 on GB10/sm_121 because the public cuTile path clears BF16 today, "
-            "while FP8 and FP4 remain blocked or incomplete in the current public stack."
+            "First target: maximize throughput on GB10/sm_121 with Qwen3-1.7B-Base BF16. Prefer cuTile when it is "
+            "competitive, but allow Triton, CUTLASS, or PTX for decisive hot kernels."
         ),
-        semantic_model_id="Qwen/Qwen3-8B",
-        artifact_model_id="Qwen/Qwen3-8B",
-        num_hidden_layers=36,
-        hidden_size=4096,
-        num_attention_heads=32,
+        semantic_model_id="Qwen/Qwen3-1.7B-Base",
+        artifact_model_id="Qwen/Qwen3-1.7B-Base",
+        num_hidden_layers=28,
+        hidden_size=2048,
+        num_attention_heads=16,
         num_key_value_heads=8,
         head_dim=128,
         target_gpu="GB10 / sm_121",
-        remote_model_key="Qwen__Qwen3-8B",
-        compile_gate="BF16 compiler path clears on sm_121; FP8 and FP4 remain negative or incomplete gates in the public stack.",
+        remote_model_key="Qwen__Qwen3-1.7B-Base",
+        compile_gate=(
+            "BF16 precision gate clears on sm_121. Backend choice is throughput-first: prefer cuTile where viable, "
+            "otherwise allow Triton, CUTLASS, or PTX for decisive kernels."
+        ),
         legacy_reference="Qwen3-32B BF16 borrowed and semantic runtime loops remain as larger-model legacy reference data.",
         dtype="bfloat16",
-        kv_layout="paged grouped-query attention (32 Q heads / 8 KV heads, head_dim 128)",
+        kv_layout="paged grouped-query attention (16 Q heads / 8 KV heads, head_dim 128)",
+        backend_policy=(
+            "Prefer cuTile -> TileIR -> cubin when it does not cost throughput on the decisive path.",
+            "Allow Triton or CUTLASS for hot kernels if they materially improve tokens/s while keeping ownership inside leanstack.",
+            "Use PTX only as a narrowly scoped hotspot wedge when higher-level backends cannot produce the required code shape.",
+            "Inspect SASS for the hot path regardless of authoring backend.",
+        ),
         required_kernels=(
             "bf16-gemm",
             "rmsnorm",
@@ -36,35 +45,34 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         ),
         bring_up_sequence=(
             "keep the BF16 compiler path green on GB10/sm_121",
-            "use the public precision gate to record FP8 and FP4 blockers explicitly",
-            "load Qwen3-8B config and BF16 checkpoint metadata",
+            "load Qwen3-1.7B-Base config and BF16 checkpoint metadata",
             "map dense BF16 linears into adapter-owned layouts",
-            "bring up one BF16 transformer block forward path",
+            "bring up one BF16 transformer block forward path with the throughput-first backend that wins on GB10",
             "bring up prefill and decode with explicit KV reuse",
         ),
         static_contract=(
-            "Model semantics are fixed to Qwen3-8B with 36 layers, hidden size 4096, and GQA geometry 32Q/8KV/128.",
-            "Deployment target is fixed to the public Qwen3-8B BF16 checkpoint on GB10 / sm_121.",
-            "Only the user request is intended to stay dynamic; model geometry, precision policy, kernel inventory, and dispatch order should be fixed by the model-chip contract.",
+            "Model semantics are fixed to Qwen3-1.7B-Base with 28 layers, hidden size 2048, and GQA geometry 16Q/8KV/128.",
+            "Deployment target is fixed to the public Qwen3-1.7B-Base BF16 checkpoint on GB10 / sm_121.",
+            "Only the user request is intended to stay dynamic; model geometry, precision policy, kernel inventory, backend choice per hot path, and dispatch order should be fixed by the model-chip contract.",
             "KV page layout, RoPE policy, BF16 linear strategy, and MLP fusion rules are fixed by the adapter.",
             "The intended execution path is GPU-resident and explicit, without framework-managed CPU offload.",
-            "FP8 and FP4 stay deferred until the public precision gate reports a positive result.",
+            "FP8 and FP4 stay deferred until they beat or clearly improve upon the BF16 throughput-first path.",
         ),
         dynamic_inputs=(
             "User request payload: prompt tokens and requested decode budget.",
             "Stopping condition derived from generated tokens or stop tokens.",
         ),
         deferred_compatibility=(
-            "Cross-model compatibility outside the first Qwen3-8B BF16 contract.",
+            "Cross-model compatibility outside the first Qwen3-1.7B-Base BF16 contract.",
             "Cross-hardware portability beyond GB10 / sm_121.",
             "Framework-style automatic placement, fallback, and heterogeneous offload behavior.",
         ),
         notes=(
             "Treat the previous Qwen3-32B BF16 runtime work as a larger-model reference path, not the active first target.",
-            "Prefer relay-based model delivery if the remote host cannot fetch the Qwen3-8B checkpoint directly.",
+            "Prefer relay-based model delivery if the remote host cannot fetch the Qwen3-1.7B-Base checkpoint directly.",
             "Treat TensorRT-LLM, vLLM, and SGLang as external baselines, not implementation dependencies.",
             "Treat broad compatibility as a deferred cost unless it is required by the first model-chip contract.",
-            "Use the executable precision gate as the source of truth: BF16 is currently cleared, FP8 is currently blocked at TileIR verification, and FP4 lacks a complete public frontend surface.",
+            "Treat throughput as the primary optimization target; do not keep a slower backend on the hot path just because it is conceptually cleaner.",
         ),
     ),
     "glm": ModelSpec(

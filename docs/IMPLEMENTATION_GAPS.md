@@ -7,7 +7,7 @@ Date verified: 2026-03-07
 - The current remote deployment target is `NVIDIA GB10`.
 - The remote machine reports compute capability `12.1`.
 - The remote `tileiras` tool exposes `--gpu-name=sm_121`.
-- The active first contract is `Qwen/Qwen3-8B` BF16 on `GB10 / sm_121`.
+- The active first contract is `Qwen/Qwen3-1.7B-Base` BF16 on `GB10 / sm_121`.
 - The executable precision gate currently recommends `bfloat16` as the active public-cuTile precision on `sm_121`.
 - The public remote `cuda.tile 1.1.0` install exposes `float16`, `float32`, `float64`, `bfloat16`, `tfloat32`, `float8_e4m3fn`, and `float8_e5m2`.
 - The current float8 probe reaches the compiler but fails TileIR verification for both public FP8 dtypes.
@@ -42,8 +42,8 @@ But they are no longer the active first target.
 The key engineering task is:
 
 1. keep the BF16 precision gate green on `sm_121`
-2. keep `Qwen3-8B` semantics and BF16 checkpoint ownership explicit
-3. lower each stable semantic unit into `cuTile -> TileIR -> cubin`
+2. keep `Qwen3-1.7B-Base` semantics and BF16 checkpoint ownership explicit
+3. lower each stable semantic unit into a throughput-first owned backend path
 4. inspect PTX and SASS for the hot kernels
 
 ## Gap matrix
@@ -66,15 +66,15 @@ The key engineering task is:
   - `leanstack` already has a legacy explicit Qwen path that owns weight indexing, shard reads, GPU placement, KV state, and layer semantics
   - that path is still tied to the old `Qwen3-32B BF16` reference work
 - Target:
-  - `leanstack` owns `Qwen3-8B` semantics and the BF16 checkpoint layout without borrowing execution behavior from `transformers`
+  - `leanstack` owns `Qwen3-1.7B-Base` semantics and the BF16 checkpoint layout without borrowing execution behavior from `transformers`
 - Why this matters:
-  - the repo already proved the general direction on a legacy path, so the next step is to shrink and retarget the same ownership pattern to the new 8B BF16 contract
+  - the repo already proved the general direction on a legacy path, so the next step is to shrink and retarget the same ownership pattern to the new 1.7B BF16 contract
 
 ### 3. Checkpoint ownership
 
 - Current:
   - the repo has strong Qwen config and tokenizer handling on the legacy dense path
-  - the repo does not yet own the `Qwen3-8B` BF16 tensor contract end-to-end
+  - the repo does not yet own the `Qwen3-1.7B-Base` BF16 tensor contract end-to-end
 - Target:
   - explicit mapping for BF16 linears, residual tensors, and logits projection
 - Why this matters:
@@ -85,7 +85,7 @@ The key engineering task is:
 - Current:
   - the repo already has a legacy page-based KV manager and residency logic shaped around `Qwen3-32B BF16`
 - Target:
-  - a smaller residency plan and KV contract specialized for `Qwen3-8B` BF16 on GB10
+  - a smaller residency plan and KV contract specialized for `Qwen3-1.7B-Base` BF16 on GB10
 - Why this matters:
   - the new target only makes sense if its smaller shape translates into materially simpler and faster residency behavior
 
@@ -95,7 +95,7 @@ The key engineering task is:
   - BF16 compiles through the public `cuTile` path for the minimal probe
   - the old dense Qwen path still relies on eager PyTorch math for its active semantics
 - Target:
-  - a small `Qwen3-8B` BF16 kernel catalog exists for:
+  - a small `Qwen3-1.7B-Base` BF16 kernel catalog exists for:
     - BF16 linear or GEMM path
     - RMSNorm
     - RoPE
@@ -118,25 +118,27 @@ The key engineering task is:
 
 ## Recommended closure order
 
-1. own the `Qwen3-8B` BF16 checkpoint contract
-2. port the old Qwen semantic path onto the new 8B BF16 contract
-3. lower decisive BF16 kernels into repeatable `sm_121` artifacts
+1. own the `Qwen3-1.7B-Base` BF16 checkpoint contract
+2. port the old Qwen semantic path onto the new 1.7B BF16 contract
+3. lower decisive BF16 kernels into repeatable `sm_121` artifacts with the backend that wins throughput
 4. stand up the first runtime loop
 5. only then freeze baseline configs for external frameworks
 
 ## Compiler-path policy
 
-### Mainline
+### Backend policy
 
-The mainline should remain:
+The default backend order should be:
 
-`Qwen adapter -> cuTile Python DSL -> TileIR/tilebc -> tileiras -> cubin`
+1. `cuTile -> TileIR -> cubin` when it is competitive
+2. Triton or CUTLASS when they materially improve tokens/s
+3. PTX when higher-level backends still miss the hotspot
 
-This keeps the stack inspectable and still close enough to hardware to expose the real kernel and memory decisions.
+This keeps the stack inspectable while acknowledging that throughput is the first gating metric.
 
 ### PTX
 
-PTX is a valid escape hatch when the DSL or TileIR surface cannot yet express a needed behavior, especially for a future hotspot FP8 or FP4 kernel on `sm_121`.
+PTX is a valid escape hatch when higher-level backends still cannot express or win a needed hotspot, especially for a future FP8 or FP4 kernel on `sm_121`.
 
 But PTX should not become the default authoring layer, for two reasons:
 

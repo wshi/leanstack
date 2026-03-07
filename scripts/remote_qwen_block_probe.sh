@@ -5,7 +5,7 @@ set -o pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REMOTE_SCRIPT="${REMOTE_SCRIPT:-$ROOT/../remote.sh}"
 REMOTE_HOME="${REMOTE_HOME:-/home/pto/lean}"
-MODEL_ID="${MODEL_ID:-Qwen/Qwen3-8B}"
+MODEL_ID="${MODEL_ID:-Qwen/Qwen3-1.7B-Base}"
 MODEL_KEY="${MODEL_ID//\//__}"
 MODEL_PATH_FILE="${MODEL_PATH_FILE:-$REMOTE_HOME/models/$MODEL_KEY.path}"
 MODEL_PATH="${MODEL_PATH:-}"

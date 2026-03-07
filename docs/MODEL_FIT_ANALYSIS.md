@@ -13,7 +13,7 @@ That hardware envelope immediately separates models into two groups:
 
 ## Candidate models
 
-### 1. `Qwen/Qwen3-8B` BF16
+### 1. `Qwen/Qwen3-1.7B-Base` BF16
 
 Why it is attractive:
 
@@ -32,6 +32,7 @@ Reason:
 - dense transformer blocks with GQA and SwiGLU are the cleanest path for a first kernel catalog
 - no MoE router, no MLA, no DSA-specific sparse path
 - much more credible than the old `Qwen3-32B` path as a first performance target on one GB10
+- much more favorable than the earlier 8B pivot if `tokens/s` is the primary success metric
 - public BF16 is the only precision that is actually cleared today on the public `cuTile` path
 
 ### 2. `zai-org/glm-4-9b-hf`
@@ -114,7 +115,7 @@ Reason:
 
 ### Best first target if cuTile simplicity is the priority
 
-- `Qwen/Qwen3-8B` BF16
+- `Qwen/Qwen3-1.7B-Base` BF16
 
 ### Best second-step precision target if the public toolchain improves
 
