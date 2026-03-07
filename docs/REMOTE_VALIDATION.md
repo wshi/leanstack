@@ -20,10 +20,11 @@ The scripts in this repo create and use:
 2. `./scripts/remote_sync.sh`
 3. `./scripts/remote_verify.sh`
 4. `./scripts/remote_fp4_inventory.sh`
-5. `./scripts/remote_model_probe.sh`
-6. `MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_fetch.sh` for the semantic-base snapshot path
-7. `MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_baseline.sh`
-8. `./scripts/relay_url_to_remote.sh` or `./scripts/push_local_file_to_remote.sh` if the remote machine cannot download an artifact directly
+5. `./scripts/remote_fp4_gate.sh`
+6. `./scripts/remote_model_probe.sh`
+7. `MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_fetch.sh` for the semantic-base snapshot path
+8. `MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_baseline.sh`
+9. `./scripts/relay_url_to_remote.sh` or `./scripts/push_local_file_to_remote.sh` if the remote machine cannot download an artifact directly
 
 ## What `remote_verify.sh` checks
 
@@ -94,6 +95,23 @@ Interpretation:
 - backend targeting for GB10 is visible
 - public frontend FP4 coverage is still unproven
 - the next real validation task is a minimal FP4 compiler probe, not another large BF16 runtime run
+
+## Latest FP4 gate result
+
+Date confirmed: 2026-03-07
+
+The following command completed successfully on the remote machine:
+
+- `./scripts/remote_fp4_gate.sh`
+
+Key confirmed facts:
+
+- artifact written to `/home/pto/lean/artifacts/fp4-gate/fp4_gate_20260307T080849Z.json`
+- gate status is `blocked`
+- blocker is `public cuda.tile frontend does not expose a complete FP4 authoring surface`
+- backend still reports `sm_121` support in `tileiras`
+
+This means the repo now has an executable FP4 compiler gate. The current result is a real blocker, not just a planning note.
 
 ## Legacy runtime references
 

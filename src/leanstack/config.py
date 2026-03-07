@@ -20,6 +20,17 @@ class ModelSpec:
     dtype: str
     kv_layout: str
     required_kernels: tuple[str, ...]
+    semantic_model_id: str | None = None
+    artifact_model_id: str | None = None
+    num_hidden_layers: int | None = None
+    hidden_size: int | None = None
+    num_attention_heads: int | None = None
+    num_key_value_heads: int | None = None
+    head_dim: int | None = None
+    target_gpu: str | None = None
+    remote_model_key: str | None = None
+    compile_gate: str | None = None
+    legacy_reference: str | None = None
     bring_up_sequence: tuple[str, ...] = field(default_factory=tuple)
     static_contract: tuple[str, ...] = field(default_factory=tuple)
     dynamic_inputs: tuple[str, ...] = field(default_factory=tuple)

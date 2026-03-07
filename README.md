@@ -44,6 +44,7 @@ Stage 0 in this repo does five concrete things:
 - `docs/REFERENCES.md`: external research, framework, model, and hardware references.
 - `docs/REMOTE_VALIDATION.md`: remote workflow and artifact layout.
 - `experiments/cutile/vector_add.py`: known-good cuTile smoke kernel.
+- `experiments/cutile/fp4_compiler_gate.py`: executable FP4 compiler-gate probe for the current public cuTile install.
 - `experiments/models/hf_causal_lm_smoke.py`: baseline Hugging Face causal LM smoke path.
 - `experiments/models/qwen_explicit_block_probe.py`: explicit Qwen loader and layer-0 block/prefill/decode probe.
 - `experiments/models/qwen_explicit_stack_probe.py`: explicit multi-layer Qwen stack probe.
@@ -66,6 +67,7 @@ PYTHONPATH=src python3 -m leanstack.cli show-gaps --model qwen
 ./scripts/remote_sync.sh
 ./scripts/remote_verify.sh
 ./scripts/remote_fp4_inventory.sh
+./scripts/remote_fp4_gate.sh
 ./scripts/remote_model_probe.sh
 MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_fetch.sh
 MODEL_ID=Qwen/Qwen3-8B ./scripts/remote_qwen_baseline.sh
@@ -108,6 +110,7 @@ Current facts:
 - remote cuTile smoke wired into the DGX Spark machine
 - the public remote `cuda.tile 1.1.0` install exposes dtypes up to FP8 in `cuda/tile/_datatype.py`, but not a public `FP4` or `NVFP4` dtype symbol
 - the public remote `tileiras` install does target `sm_121`, so backend code generation target coverage exists even though public frontend FP4 coverage is still unproven
+- the executable remote gate `./scripts/remote_fp4_gate.sh` now records this status as a real `blocked/cleared` result instead of leaving it only in documentation
 - the previous `Qwen3-32B BF16` borrowed and semantic runtime loops remain in the repo as legacy reference data, not the active first target
 - those legacy runs produced only about `2 tokens/s` on the remote GB10, which is not a credible starting point for a framework comparison
 

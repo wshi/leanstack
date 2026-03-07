@@ -56,6 +56,21 @@ Phase 1 only succeeds if at least one of these is demonstrated on the remote GB1
 
 In both cases, the kernel must run on the remote machine and produce a captured artifact trail.
 
+## Current executable gate
+
+This repo now exposes the gate directly through:
+
+- `experiments/cutile/fp4_compiler_gate.py`
+- `scripts/remote_fp4_gate.sh`
+
+Current remote result on 2026-03-07:
+
+- status: `blocked`
+- blocker: `public cuda.tile frontend does not expose a complete FP4 authoring surface`
+- backend target availability: `sm_121` is present in `tileiras`
+
+That means the gate is no longer documentation-only. It is an executable check whose current answer is negative.
+
 ## What does not count as success
 
 The following do not clear the gate:

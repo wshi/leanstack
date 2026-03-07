@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 from pathlib import Path
@@ -52,5 +53,8 @@ def run_remote_bash(endpoint: RemoteEndpoint, script: str) -> subprocess.Complet
 
 
 def default_remote_script() -> Path:
+    configured = os.environ.get("LEANSTACK_REMOTE_SCRIPT")
+    if configured:
+        return Path(configured).expanduser()
     repo_root = Path(__file__).resolve().parents[2]
     return repo_root.parent / "remote.sh"

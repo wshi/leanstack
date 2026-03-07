@@ -6,22 +6,55 @@ from leanstack.config import ModelSpec
 
 
 @dataclass(frozen=True)
-class RuntimeComponent:
-    name: str
-    responsibility: str
-    exit_criterion: str
+class ModelGeometry:
+    num_hidden_layers: int
+    hidden_size: int
+    num_attention_heads: int
+    num_key_value_heads: int
+    head_dim: int
+
+    def render(self) -> tuple[str, ...]:
+        return (
+            f"layers={self.num_hidden_layers}",
+            f"hidden_size={self.hidden_size}",
+            f"attention_heads={self.num_attention_heads}",
+            f"kv_heads={self.num_key_value_heads}",
+            f"head_dim={self.head_dim}",
+        )
 
 
 @dataclass(frozen=True)
 class RuntimeBlueprint:
     model: ModelSpec
-    components: tuple[RuntimeComponent, ...]
+    geometry: ModelGeometry | None
 
     def render(self) -> str:
         lines = [f"Runtime blueprint for {self.model.family} ({self.model.key})"]
-        for component in self.components:
-            lines.append(f"- {component.name}: {component.responsibility}")
-            lines.append(f"  Exit criterion: {component.exit_criterion}")
+        if self.model.semantic_model_id:
+            lines.append(f"Semantic model: {self.model.semantic_model_id}")
+        if self.model.artifact_model_id:
+            lines.append(f"Deployment artifact: {self.model.artifact_model_id}")
+        if self.model.target_gpu:
+            lines.append(f"Target GPU: {self.model.target_gpu}")
+        if self.model.remote_model_key:
+            lines.append(f"Preferred remote path file: /home/pto/lean/models/{self.model.remote_model_key}.path")
+        if self.geometry is not None:
+            lines.append("Geometry:")
+            for item in self.geometry.render():
+                lines.append(f"- {item}")
+        lines.append(f"KV layout: {self.model.kv_layout}")
+        lines.append(f"DType: {self.model.dtype}")
+        if self.model.compile_gate:
+            lines.append(f"Compile gate: {self.model.compile_gate}")
+        lines.append("Required kernels:")
+        for kernel in self.model.required_kernels:
+            lines.append(f"- {kernel}")
+        if self.model.bring_up_sequence:
+            lines.append("Bring-up sequence:")
+            for step in self.model.bring_up_sequence:
+                lines.append(f"- {step}")
+        if self.model.legacy_reference:
+            lines.append(f"Legacy reference: {self.model.legacy_reference}")
         return "\n".join(lines)
 
 
@@ -44,36 +77,29 @@ class StaticInferenceContract:
         return "\n".join(lines)
 
 
+def _geometry_from_model(model: ModelSpec) -> ModelGeometry | None:
+    values = (
+        model.num_hidden_layers,
+        model.hidden_size,
+        model.num_attention_heads,
+        model.num_key_value_heads,
+        model.head_dim,
+    )
+    if any(value is None for value in values):
+        return None
+    return ModelGeometry(
+        num_hidden_layers=model.num_hidden_layers or 0,
+        hidden_size=model.hidden_size or 0,
+        num_attention_heads=model.num_attention_heads or 0,
+        num_key_value_heads=model.num_key_value_heads or 0,
+        head_dim=model.head_dim or 0,
+    )
+
+
 def build_runtime_blueprint(model: ModelSpec) -> RuntimeBlueprint:
     return RuntimeBlueprint(
         model=model,
-        components=(
-            RuntimeComponent(
-                name="Static contract",
-                responsibility="Freezes model geometry, device target, page layout, and kernel inventory so execution does not rediscover them at runtime.",
-                exit_criterion="Only the user request payload remains dynamic between comparable runs.",
-            ),
-            RuntimeComponent(
-                name="Block manager",
-                responsibility="Owns paged KV blocks, reuse, and eviction policy.",
-                exit_criterion="Can allocate and reclaim KV pages without leaking blocks.",
-            ),
-            RuntimeComponent(
-                name="Scheduler",
-                responsibility="Separates prefill and decode waves and emits execution batches.",
-                exit_criterion="Produces deterministic work packets for one-step decode.",
-            ),
-            RuntimeComponent(
-                name="Dispatcher",
-                responsibility="Maps execution packets onto explicit kernels from the catalog.",
-                exit_criterion="Every model step names the kernel path it used.",
-            ),
-            RuntimeComponent(
-                name="Sampler",
-                responsibility="Transforms logits into token choices without hiding policy in the runtime.",
-                exit_criterion="Supports deterministic greedy sampling before probabilistic policies.",
-            ),
-        ),
+        geometry=_geometry_from_model(model),
     )
 
 

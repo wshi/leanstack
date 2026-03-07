@@ -39,14 +39,37 @@ class KVBlockManager:
         self.layout = layout
         shape = (
             layout.num_layers,
+            layout.num_pages,
             layout.batch_size,
             layout.num_key_value_heads,
-            layout.max_seq_len,
+            layout.page_size,
             layout.head_dim,
         )
-        self.key_cache = torch.zeros(shape, device=layout.device, dtype=layout.dtype)
-        self.value_cache = torch.zeros(shape, device=layout.device, dtype=layout.dtype)
-        self.layer_seq_lens = torch.zeros(layout.num_layers, dtype=torch.int32)
+        self.key_pages = torch.zeros(shape, device=layout.device, dtype=layout.dtype)
+        self.value_pages = torch.zeros(shape, device=layout.device, dtype=layout.dtype)
+        self.layer_page_table = torch.full(
+            (layout.num_layers, layout.num_pages),
+            -1,
+            device=layout.device,
+            dtype=torch.int32,
+        )
+        self.layer_page_counts = torch.zeros(layout.num_layers, device=layout.device, dtype=torch.int32)
+        self.layer_seq_lens = torch.zeros(layout.num_layers, device=layout.device, dtype=torch.int32)
+
+    def _ensure_page(self, layer_idx: int, logical_page_idx: int) -> int:
+        physical_page_idx = int(self.layer_page_table[layer_idx, logical_page_idx].item())
+        if physical_page_idx >= 0:
+            return physical_page_idx
+
+        next_page_idx = int(self.layer_page_counts[layer_idx].item())
+        if next_page_idx >= self.layout.num_pages:
+            raise ValueError(
+                f"page allocation overflow for layer {layer_idx}: requested logical page {logical_page_idx} "
+                f"with max pages={self.layout.num_pages}"
+            )
+        self.layer_page_table[layer_idx, logical_page_idx] = next_page_idx
+        self.layer_page_counts[layer_idx] = next_page_idx + 1
+        return next_page_idx
 
     def append(self, layer_idx: int, key_states: torch.Tensor, value_states: torch.Tensor) -> None:
         if key_states.shape != value_states.shape:
@@ -67,16 +90,53 @@ class KVBlockManager:
                 f"cache overflow for layer {layer_idx}: requested {end} tokens with max_seq_len={self.layout.max_seq_len}"
             )
 
-        self.key_cache[layer_idx, :, :, start:end, :].copy_(key_states)
-        self.value_cache[layer_idx, :, :, start:end, :].copy_(value_states)
+        source_offset = 0
+        cursor = start
+        while cursor < end:
+            logical_page_idx = cursor // self.layout.page_size
+            page_offset = cursor % self.layout.page_size
+            copy_tokens = min(end - cursor, self.layout.page_size - page_offset)
+            physical_page_idx = self._ensure_page(layer_idx, logical_page_idx)
+            source_slice = slice(source_offset, source_offset + copy_tokens)
+            target_slice = slice(page_offset, page_offset + copy_tokens)
+            self.key_pages[layer_idx, physical_page_idx, :, :, target_slice, :].copy_(
+                key_states[:, :, source_slice, :]
+            )
+            self.value_pages[layer_idx, physical_page_idx, :, :, target_slice, :].copy_(
+                value_states[:, :, source_slice, :]
+            )
+            source_offset += copy_tokens
+            cursor += copy_tokens
+
         self.layer_seq_lens[layer_idx] = end
 
     def get(self, layer_idx: int) -> tuple[torch.Tensor, torch.Tensor]:
-        end = int(self.layer_seq_lens[layer_idx].item())
-        return (
-            self.key_cache[layer_idx, :, :, :end, :],
-            self.value_cache[layer_idx, :, :, :end, :],
-        )
+        seq_len = self.get_layer_seq_length(layer_idx)
+        if seq_len == 0:
+            empty = torch.empty(
+                (
+                    self.layout.batch_size,
+                    self.layout.num_key_value_heads,
+                    0,
+                    self.layout.head_dim,
+                ),
+                device=self.layout.device,
+                dtype=self.layout.dtype,
+            )
+            return empty, empty.clone()
+
+        key_pages: list[torch.Tensor] = []
+        value_pages: list[torch.Tensor] = []
+        for logical_page_idx in range(self.layout.pages_for_tokens(seq_len)):
+            physical_page_idx = int(self.layer_page_table[layer_idx, logical_page_idx].item())
+            if physical_page_idx < 0:
+                raise ValueError(f"missing physical page for layer {layer_idx}, logical page {logical_page_idx}")
+            key_pages.append(self.key_pages[layer_idx, physical_page_idx])
+            value_pages.append(self.value_pages[layer_idx, physical_page_idx])
+
+        keys = torch.cat(key_pages, dim=2)[:, :, :seq_len, :]
+        values = torch.cat(value_pages, dim=2)[:, :, :seq_len, :]
+        return keys, values
 
     def get_layer_seq_length(self, layer_idx: int) -> int:
         return int(self.layer_seq_lens[layer_idx].item())
@@ -85,8 +145,12 @@ class KVBlockManager:
         return int(self.layer_seq_lens.max().item())
 
     def page_table(self, layer_idx: int) -> tuple[int, ...]:
-        token_count = self.get_layer_seq_length(layer_idx)
-        return tuple(range(self.layout.pages_for_tokens(token_count)))
+        page_count = self.layout.pages_for_tokens(self.get_layer_seq_length(layer_idx))
+        return tuple(
+            int(self.layer_page_table[layer_idx, logical_page_idx].item())
+            for logical_page_idx in range(page_count)
+            if int(self.layer_page_table[layer_idx, logical_page_idx].item()) >= 0
+        )
 
     def summary(self) -> dict[str, int]:
         seq_len = self.get_seq_length()
@@ -94,5 +158,6 @@ class KVBlockManager:
             "page_size": self.layout.page_size,
             "num_pages": self.layout.num_pages,
             "used_pages": self.layout.pages_for_tokens(seq_len),
+            "allocated_pages": int(self.layer_page_counts.max().item()),
             "seq_len": seq_len,
         }

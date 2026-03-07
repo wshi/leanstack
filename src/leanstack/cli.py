@@ -97,7 +97,7 @@ def handle_show_benchmark_profile(args: argparse.Namespace) -> int:
 def _resolve_endpoint(remote_script: Path):
     if not remote_script.exists():
         raise FileNotFoundError(
-            f"remote script not found: {remote_script}. Pass --remote-script or set TILEPILOT_REMOTE_SCRIPT."
+            f"remote script not found: {remote_script}. Pass --remote-script or set LEANSTACK_REMOTE_SCRIPT."
         )
     return parse_remote_script(remote_script)
 

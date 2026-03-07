@@ -11,6 +11,17 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
             "First target: pivot to Qwen3-8B semantics with an NVFP4 deployment artifact on GB10/sm_121, "
             "and treat FP4 compiler feasibility as the first hard gate before building a larger runtime."
         ),
+        semantic_model_id="Qwen/Qwen3-8B",
+        artifact_model_id="nvidia/Qwen3-8B-FP4",
+        num_hidden_layers=36,
+        hidden_size=4096,
+        num_attention_heads=32,
+        num_key_value_heads=8,
+        head_dim=128,
+        target_gpu="GB10 / sm_121",
+        remote_model_key="Qwen__Qwen3-8B",
+        compile_gate="minimal FP4 or NVFP4 kernel through `cuTile -> TileIR/tileiras -> cubin (sm_121)`",
+        legacy_reference="Qwen3-32B BF16 borrowed and semantic runtime loops remain as legacy reference data.",
         dtype="nvfp4 linears with higher-precision residual path",
         kv_layout="paged grouped-query attention (32 Q heads / 8 KV heads, head_dim 128)",
         required_kernels=(
@@ -60,6 +71,7 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         key="glm",
         family="GLM-family",
         loader_hint="Second-family target: preserve GLM work after the Qwen path is stable, starting with zai-org/glm-4-9b-hf.",
+        semantic_model_id="zai-org/glm-4-9b-hf",
         dtype="bfloat16",
         kv_layout="grouped-query attention with explicit paged KV blocks",
         required_kernels=(
@@ -88,6 +100,7 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         family="Llama-family",
         loader_hint="Useful as a fallback dense adapter if Qwen coverage reveals a tooling issue unrelated to model family specifics.",
         dtype="bfloat16",
+        target_gpu="GB10 / sm_121",
         kv_layout="paged causal attention",
         required_kernels=("rmsnorm", "rope", "paged-attention", "silu-mlp", "sampler"),
     ),

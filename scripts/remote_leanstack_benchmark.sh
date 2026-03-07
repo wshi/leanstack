@@ -8,6 +8,7 @@ REMOTE_HOME="${REMOTE_HOME:-/home/pto/lean}"
 MODEL_ID="${MODEL_ID:-Qwen/Qwen3-8B}"
 MODEL_KEY="${MODEL_ID//\//__}"
 MODEL_PATH_FILE="${MODEL_PATH_FILE:-$REMOTE_HOME/models/$MODEL_KEY.path}"
+MODEL_PATH="${MODEL_PATH:-}"
 PROFILE="${PROFILE:-single_stream_short}"
 RUNTIME_MODE="${RUNTIME_MODE:-semantic}"
 NUM_LAYERS="${NUM_LAYERS:-0}"
@@ -23,13 +24,14 @@ load_remote_cmd "$REMOTE_SCRIPT"
 COMMAND="set -euo pipefail; \
 source /home/pto/venv-cutile/bin/activate; \
 export PYTHONPATH=/home/pto/lean/repo/src; \
-MODEL_PATH=\$(<\"$MODEL_PATH_FILE\"); \
+MODEL_REF=\"$MODEL_PATH\"; \
+if [[ -z \"\$MODEL_REF\" ]]; then MODEL_REF=\$(<\"$MODEL_PATH_FILE\"); fi; \
 eval \"\$(python3 -m leanstack.cli show-benchmark-profile --profile \"$PROFILE\" --format shell)\"; \
 mkdir -p \"$RESULT_DIR\"; \
 if [[ -z \"$BENCHMARK_TAG\" ]]; then BENCHMARK_TAG=\$(date -u +%Y%m%dT%H%M%SZ); fi; \
 OUTPUT_PATH=\"$RESULT_DIR/leanstack_${RUNTIME_MODE}_${PROFILE}_\${BENCHMARK_TAG}.json\"; \
 python3 /home/pto/lean/repo/experiments/models/qwen_explicit_runtime_loop.py \
-  --model-path \"\$MODEL_PATH\" \
+  --model-path \"\$MODEL_REF\" \
   --runtime-mode \"$RUNTIME_MODE\" \
   --benchmark-profile \"$PROFILE\" \
   --num-layers \"$NUM_LAYERS\" \

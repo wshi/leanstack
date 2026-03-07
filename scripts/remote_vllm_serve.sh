@@ -9,6 +9,7 @@ VLLM_VENV="${VLLM_VENV:-$REMOTE_HOME/venv-vllm}"
 MODEL_ID="${MODEL_ID:-Qwen/Qwen3-8B}"
 MODEL_KEY="${MODEL_ID//\//__}"
 MODEL_PATH_FILE="${MODEL_PATH_FILE:-$REMOTE_HOME/models/$MODEL_KEY.path}"
+MODEL_PATH="${MODEL_PATH:-}"
 VLLM_HOST="${VLLM_HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
 DTYPE="${DTYPE:-bfloat16}"
@@ -23,14 +24,15 @@ load_remote_cmd "$REMOTE_SCRIPT"
 
 COMMAND="set -euo pipefail; \
 source \"$VLLM_VENV/bin/activate\"; \
-MODEL_PATH=\$(<\"$MODEL_PATH_FILE\"); \
+MODEL_REF=\"$MODEL_PATH\"; \
+if [[ -z \"\$MODEL_REF\" ]]; then MODEL_REF=\$(<\"$MODEL_PATH_FILE\"); fi; \
 mkdir -p \"$LOG_DIR\"; \
 PID_FILE=\"$LOG_DIR/vllm_${PORT}.pid\"; \
 LOG_FILE=\"$LOG_DIR/vllm_${PORT}.log\"; \
 if [[ -f \"\$PID_FILE\" ]] && kill -0 \$(<\"\$PID_FILE\") 2>/dev/null; then \
   echo \"vLLM already running with pid \$(<\"\$PID_FILE\")\"; \
 else \
-  nohup vllm serve \"\$MODEL_PATH\" \
+  nohup vllm serve \"\$MODEL_REF\" \
     --host \"$VLLM_HOST\" \
     --port \"$PORT\" \
     --dtype \"$DTYPE\" \
