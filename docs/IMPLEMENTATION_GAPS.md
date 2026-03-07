@@ -11,15 +11,15 @@ Date verified: 2026-03-07
 
 ## What `transformers` still provides today
 
-The repo has already removed `device_map="auto"` from the baseline path and moved explicit weight staging and placement into `leanstack`, but the explicit probes still borrow important execution semantics from `transformers`:
+The repo has already removed `device_map="auto"` from the baseline path and moved explicit weight staging and placement into `leanstack`.
 
-- `Qwen3DecoderLayer`
-- `Qwen3RotaryEmbedding`
-- `Qwen3RMSNorm`
-- `DynamicCache`
+Today `transformers` still provides these surfaces:
+
+- the borrowed reference path built from `Qwen3DecoderLayer`, `Qwen3RotaryEmbedding`, `Qwen3RMSNorm`, and `DynamicCache`
 - tokenizer and chat-template handling
+- config/model-card compatibility surfaces used as reference metadata
 
-That means the current repo is no longer framework-directed in placement, but it is still framework-assisted in operator semantics.
+That means the current repo is no longer framework-directed in placement, and the active semantic loop is no longer framework-directed in layer semantics or KV cache behavior. The remaining dependence is mostly reference-mode correctness, tokenizer/config compatibility, and eager PyTorch math.
 
 ## The critical gap to close
 
@@ -32,24 +32,43 @@ It is:
 3. lower each stable semantic unit into `cuTile -> TileIR -> cubin`
 4. inspect PTX and SASS for the hot kernels
 
+## Measured delta on GB10 today
+
+For the same `prompt_tokens=8`, `max_new_tokens=4` probe on the remote GB10 machine:
+
+- borrowed full runtime loop:
+  - materialization about `76.7s`
+  - runtime-loop throughput about `2.24 tokens/s`
+- semantic full runtime loop:
+  - materialization about `290.7s`
+  - runtime-loop throughput about `1.92 tokens/s`
+
+Interpretation:
+
+- semantic ownership and leanstack-owned KV cache are now proven at full-model scale
+- the remaining gap is primarily eager PyTorch math, dense/probe-style cache layout, and layer-by-layer staging
+- this is exactly the point where `cuTile/TileIR` kernel work becomes the decisive next step
+
 ## Gap matrix
 
 ### 1. Semantic ownership
 
 - Current:
   - `leanstack` owns weight indexing, shard reads, and GPU placement.
-  - a new adapter-owned layer-0 semantic path now reproduces the borrowed block closely enough for forward, prefill, and decode probes.
-  - `transformers` still owns the active multi-layer and full-model execution path.
+  - an adapter-owned semantic path now runs end-to-end from layer-0 probes to the full 64-layer runtime loop.
+  - the active semantic loop owns RMSNorm, RoPE, GQA attention, MLP, final norm, logits projection, and KV cache control.
+  - the borrowed `transformers` path is now a correctness oracle rather than the only working full-model execution path.
 - Target:
   - `leanstack` owns RMSNorm, RoPE, QKV projections, GQA attention, MLP, final norm, output projection, and sampler behavior.
 - Why this matters:
-  - kernel replacement is blocked until semantic ownership leaves `transformers`
+  - the next blocking issue is no longer semantic ownership itself, but lowering that owned semantic surface into `cuTile/TileIR` kernels
 
 ### 2. Full-model residency and layout
 
 - Current:
   - the explicit runtime loop can now materialize all 64 Qwen3-32B layers, final norm, and output head onto GB10 GPU memory
-  - the current materialization path is still a probe-oriented, layer-by-layer staging flow rather than a production residency planner
+  - the new full semantic loop also materializes all 64 layers and reaches about `65.5 GiB` allocated after materialization on GB10
+  - the current materialization path is still a probe-oriented, layer-by-layer staging flow rather than a production residency planner, which is why semantic materialization is still much slower than the borrowed reference path
 - Target:
   - a fixed `Qwen3-32B + GB10` residency plan for all 64 layers, plus deterministic KV layout
 - Why this matters:
@@ -58,8 +77,8 @@ It is:
 ### 3. KV cache ownership
 
 - Current:
-  - a new page-based KV manager exists for the semantic block probe
-  - the active multi-layer and full-model loops still use `DynamicCache`
+  - a page-based KV manager exists for the semantic block probe and now also drives the active full semantic runtime loop
+  - the current implementation still uses a dense preallocated tensor and simple append logic rather than a fully paged indirection/reuse scheme
 - Target:
   - a paged KV manager specialized to Qwen GQA geometry on `sm_121`
 - Why this matters:
@@ -68,7 +87,8 @@ It is:
 ### 4. Kernel catalog
 
 - Current:
-  - explicit probes still inherit math execution from framework modules
+  - the semantic runtime no longer inherits block execution from framework modules
+  - all math still runs through eager PyTorch operators such as `F.linear`, `softmax`, and `silu`
 - Target:
   - a small catalog of Qwen-specific kernels:
     - RMSNorm
@@ -96,7 +116,8 @@ It is:
 ### 6. Runtime loop
 
 - Current:
-  - a deterministic, single-request, full 64-layer prefill/decode loop now runs on the remote machine with explicit greedy decode accounting
+  - deterministic, single-request, full 64-layer prefill/decode loops now run on the remote machine in both borrowed and semantic modes
+  - the semantic mode uses leanstack-owned KV cache state and adapter-owned layer semantics, but is still a script-level loop
 - Target:
   - a small runtime loop performs deterministic single-request prefill/decode first, then expands to comparable batching rules for benchmark work
 - Why this matters:
@@ -104,12 +125,12 @@ It is:
 
 ## Recommended closure order
 
-1. replace `DynamicCache` with a static KV page contract
-2. split the borrowed Qwen block into adapter-owned sub-operators
-3. bring up `RMSNorm`, `RoPE`, and sampler in cuTile first
-4. bring up GQA prefill/decode kernels
-5. package kernels as repeatable `sm_121` artifacts
-6. turn the full single-request loop into a scheduler-ready runtime surface
+1. replace the dense semantic KV tensor with a true static page contract and residency planner
+2. lower `RMSNorm`, `RoPE`, logits projection, and sampler from eager PyTorch into `cuTile/TileIR`
+3. lower GQA prefill/decode and projection kernels
+4. package kernels as repeatable `sm_121` artifacts
+5. turn the semantic single-request loop into a scheduler-ready runtime surface
+6. only then freeze baseline configs for `vLLM` and `SGLang`
 
 ## Compiler-path policy
 

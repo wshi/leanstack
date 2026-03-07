@@ -10,9 +10,14 @@ from transformers import AutoTokenizer
 
 from leanstack.runtime.qwen_explicit import (
     materialize_qwen_full_runtime,
+    materialize_qwen_full_semantic_runtime,
     materialize_qwen_stack_runtime,
+    materialize_qwen_semantic_stack_runtime,
     normalize_stop_token_ids,
     project_hidden_to_logits,
+    project_semantic_hidden_to_logits,
+    run_semantic_stack_decode,
+    run_semantic_stack_prefill,
     run_stack_decode,
     run_stack_prefill,
     select_greedy_token,
@@ -22,6 +27,7 @@ from leanstack.runtime.qwen_explicit import (
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run an explicit Qwen3 runtime loop on GPU.")
     parser.add_argument("--model-path", required=True)
+    parser.add_argument("--runtime-mode", choices=("borrowed", "semantic"), default="borrowed")
     parser.add_argument("--num-layers", type=int, default=0, help="0 means the full model.")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--dtype", choices=("bfloat16", "float16", "float32"), default="bfloat16")
@@ -29,6 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prompt-format", choices=("auto", "chat", "raw"), default="chat")
     parser.add_argument("--max-prefill-tokens", type=int, default=16)
     parser.add_argument("--max-new-tokens", type=int, default=8)
+    parser.add_argument("--page-size", type=int, default=16)
     parser.add_argument("--stop-token-id", action="append", type=int, default=None)
     parser.add_argument("--ignore-eos", action="store_true")
     parser.add_argument("--skip-final-cache-advance", action="store_true")
@@ -117,21 +124,38 @@ def main() -> int:
 
     sync_device(device)
     start = time.perf_counter()
-    if args.num_layers == 0:
-        runtime = materialize_qwen_full_runtime(
-            model_path=args.model_path,
-            device=args.device,
-            dtype=args.dtype,
-            include_output_head=True,
-        )
+    if args.runtime_mode == "semantic":
+        if args.num_layers == 0:
+            runtime = materialize_qwen_full_semantic_runtime(
+                model_path=args.model_path,
+                device=args.device,
+                dtype=args.dtype,
+                include_output_head=True,
+            )
+        else:
+            runtime = materialize_qwen_semantic_stack_runtime(
+                model_path=args.model_path,
+                layer_indices=tuple(range(args.num_layers)),
+                device=args.device,
+                dtype=args.dtype,
+                include_output_head=True,
+            )
     else:
-        runtime = materialize_qwen_stack_runtime(
-            model_path=args.model_path,
-            layer_indices=tuple(range(args.num_layers)),
-            device=args.device,
-            dtype=args.dtype,
-            include_output_head=True,
-        )
+        if args.num_layers == 0:
+            runtime = materialize_qwen_full_runtime(
+                model_path=args.model_path,
+                device=args.device,
+                dtype=args.dtype,
+                include_output_head=True,
+            )
+        else:
+            runtime = materialize_qwen_stack_runtime(
+                model_path=args.model_path,
+                layer_indices=tuple(range(args.num_layers)),
+                device=args.device,
+                dtype=args.dtype,
+                include_output_head=True,
+            )
     sync_device(device)
     timings["materialize_seconds"] = time.perf_counter() - start
     memory["after_materialize"] = snapshot_cuda_memory(device)
@@ -143,8 +167,17 @@ def main() -> int:
     with torch.inference_mode():
         sync_device(device)
         start = time.perf_counter()
-        prefill_hidden, cache = run_stack_prefill(runtime, input_ids)
-        next_logits = project_hidden_to_logits(runtime, prefill_hidden)
+        if args.runtime_mode == "semantic":
+            prefill_hidden, cache = run_semantic_stack_prefill(
+                runtime,
+                input_ids,
+                page_size=args.page_size,
+                max_seq_len=int(input_ids.shape[-1]) + args.max_new_tokens,
+            )
+            next_logits = project_semantic_hidden_to_logits(runtime, prefill_hidden)
+        else:
+            prefill_hidden, cache = run_stack_prefill(runtime, input_ids)
+            next_logits = project_hidden_to_logits(runtime, prefill_hidden)
         sync_device(device)
         timings["prefill_seconds"] = time.perf_counter() - start
 
@@ -163,8 +196,12 @@ def main() -> int:
 
             sync_device(device)
             step_start = time.perf_counter()
-            decode_hidden, cache = run_stack_decode(runtime, next_token, cache)
-            next_logits = project_hidden_to_logits(runtime, decode_hidden)
+            if args.runtime_mode == "semantic":
+                decode_hidden, cache = run_semantic_stack_decode(runtime, next_token, cache)
+                next_logits = project_semantic_hidden_to_logits(runtime, decode_hidden)
+            else:
+                decode_hidden, cache = run_stack_decode(runtime, next_token, cache)
+                next_logits = project_hidden_to_logits(runtime, decode_hidden)
             sync_device(device)
             decode_step_seconds.append(time.perf_counter() - step_start)
 
@@ -177,7 +214,10 @@ def main() -> int:
             final_token = torch.tensor([[generated_ids[-1]]], device=device, dtype=torch.long)
             sync_device(device)
             start = time.perf_counter()
-            _, cache = run_stack_decode(runtime, final_token, cache)
+            if args.runtime_mode == "semantic":
+                _, cache = run_semantic_stack_decode(runtime, final_token, cache)
+            else:
+                _, cache = run_stack_decode(runtime, final_token, cache)
             sync_device(device)
             timings["final_cache_advance_seconds"] = time.perf_counter() - start
             final_cache_advanced = True
@@ -193,6 +233,7 @@ def main() -> int:
         "model_path": args.model_path,
         "num_layers": len(runtime.layer_indices),
         "layer_range": [runtime.layer_indices[0], runtime.layer_indices[-1]] if runtime.layer_indices else [],
+        "runtime_mode": args.runtime_mode,
         "device": args.device,
         "dtype": args.dtype,
         "attn_implementation": runtime.config._attn_implementation,
@@ -209,6 +250,7 @@ def main() -> int:
         "generated_token_ids": generated_ids,
         "generated_text": generated_text,
         "cache_seq_length": int(cache.get_seq_length()),
+        "cache_summary": cache.summary() if args.runtime_mode == "semantic" else None,
         "final_cache_advanced": final_cache_advanced,
         "timings": {
             **timings,

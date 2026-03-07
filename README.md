@@ -103,11 +103,12 @@ As of 2026-03-07, the first milestone is a compiler-grounded vertical slice:
 - ModelScope-based `Qwen/Qwen3-32B` fetch path validated on the remote machine
 - explicit layer-0 Qwen block/prefill/decode probe runs on the remote GB10 without `device_map=\"auto\"`
 - explicit multi-layer Qwen stack probe is now available, so the next extension can happen on the same runtime surface
-- explicit full-model Qwen runtime loop now runs across all 64 layers on the remote GB10, with approximately `65.6 GiB` allocated after materialization
-- adapter-owned layer-0 Qwen semantics now match the borrowed path closely enough to use as the next replacement wedge, and the first page-based KV manager is live in that probe
+- borrowed explicit full-model Qwen runtime loop now runs across all 64 layers on the remote GB10, with approximately `65.6 GiB` allocated after materialization and about `2.24 tokens/s` in runtime-loop throughput for the `8+4` token probe
+- adapter-owned Qwen semantics now extend all the way to a full 64-layer semantic runtime loop with a page-based KV manager, approximately `65.5 GiB` allocated after materialization, and about `1.92 tokens/s` in runtime-loop throughput for the same `8+4` token probe
+- the active semantic path no longer depends on borrowed `Qwen3DecoderLayer` or `DynamicCache`, so the remaining gap is now eager PyTorch math, probe-style staging, and lack of `cuTile/TileIR` kernels
 - a structured gap registry now tracks the remaining code path from borrowed `transformers` semantics to `cuTile/TileIR` kernels on `sm_121`
 
-The next hard gate is replacing the borrowed `transformers` layer semantics and `DynamicCache` inside the now-working full-model runtime loop with adapter-owned operators, KV layout, and kernels, then benchmarking that path against framework baselines.
+The next hard gate is lowering the now-working full-model semantic loop from eager PyTorch operators into `cuTile/TileIR` kernels, replacing the dense probe-style cache/layout path with a true residency plan, and only then benchmarking that path against framework baselines.
 
 The deeper hypothesis is that, once compatibility is treated as optional instead of mandatory, an agent can spend a bounded token budget to generate a more direct and efficient software path for a specific model-chip pair.
 

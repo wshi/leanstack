@@ -67,9 +67,9 @@ GAP_REGISTRY: dict[str, GapReport] = {
                 title="Replace borrowed Qwen semantics with adapter-owned operators",
                 status="in_progress",
                 current_state=(
-                    "The explicit path now has an adapter-owned layer-0 semantic block that reproduces the borrowed path "
-                    "closely for forward, prefill, and decode probes, but the active multi-layer and full-model execution paths "
-                    "still call `Qwen3DecoderLayer`, `Qwen3RotaryEmbedding`, `Qwen3RMSNorm`, and `DynamicCache` from `transformers`."
+                    "The semantic path now runs from layer-0 probes to a full 64-layer runtime loop using adapter-owned "
+                    "RMSNorm, RoPE, attention, MLP, final norm, logits projection, and KV cache control. The borrowed "
+                    "`transformers` path remains in the repo as a correctness oracle rather than as the only working full-model path."
                 ),
                 target_state=(
                     "The Qwen adapter owns RMSNorm, RoPE, GQA attention, MLP, final norm, output projection, and cache semantics "
@@ -77,14 +77,14 @@ GAP_REGISTRY: dict[str, GapReport] = {
                 ),
                 code_surface=(
                     "src/leanstack/runtime/qwen_explicit.py",
-                    "experiments/models/qwen_explicit_block_probe.py",
-                    "experiments/models/qwen_explicit_stack_probe.py",
+                    "experiments/models/qwen_semantic_block_probe.py",
+                    "experiments/models/qwen_explicit_runtime_loop.py",
                 ),
                 next_step=(
-                    "Extend the validated layer-0 semantic block into a multi-layer stack, then replace the borrowed decoder path in the runtime loop."
+                    "Keep the borrowed path only as a correctness oracle, then freeze the semantic surface and lower it kernel-by-kernel into `cuTile/TileIR`."
                 ),
                 risk=(
-                    "If the adapter boundary stays inside `transformers`, correctness remains easy but kernel substitution stays blocked."
+                    "If semantic ownership stops at eager PyTorch, the runtime becomes cleaner but the decisive kernel and memory optimizations stay blocked."
                 ),
             ),
             GapItem(
@@ -92,7 +92,7 @@ GAP_REGISTRY: dict[str, GapReport] = {
                 title="Turn per-layer staging into a full-model residency plan",
                 status="in_progress",
                 current_state=(
-                    "The explicit runtime loop can now materialize all 64 Qwen3-32B layers plus the output head onto GB10 GPU memory, "
+                    "Both borrowed and semantic runtime loops can now materialize all 64 Qwen3-32B layers plus the output head onto GB10 GPU memory, "
                     "but the current path is still a probe-oriented layer-by-layer staging flow rather than a production residency planner."
                 ),
                 target_state=(
@@ -101,7 +101,7 @@ GAP_REGISTRY: dict[str, GapReport] = {
                 ),
                 code_surface=("src/leanstack/runtime/qwen_explicit.py",),
                 next_step=(
-                    "Add a model-wide residency planner for 64 layers, explicit KV page geometry, and pinned-CPU-to-GPU transfer policy."
+                    "Add a model-wide residency planner for 64 layers, explicit KV page geometry, and pinned-CPU-to-GPU transfer policy so semantic materialization stops behaving like a probe."
                 ),
                 risk=(
                     "Without a fixed residency plan, later performance work will be polluted by placement and transfer noise."
@@ -112,8 +112,8 @@ GAP_REGISTRY: dict[str, GapReport] = {
                 title="Replace `DynamicCache` with a static paged KV manager",
                 status="in_progress",
                 current_state=(
-                    "A page-based KV manager now exists for the semantic block probe, but the active multi-layer and full-model loops still "
-                    "reuse `transformers.cache_utils.DynamicCache`."
+                    "A page-based KV manager now exists for the semantic block probe and the active full semantic runtime loop, "
+                    "but the current implementation is still a dense preallocated tensor with simple append semantics rather than a true page table with reuse."
                 ),
                 target_state=(
                     "The runtime owns a paged KV structure specialized for Qwen3-32B GQA geometry on GB10, including block allocation, "
@@ -124,7 +124,7 @@ GAP_REGISTRY: dict[str, GapReport] = {
                     "src/leanstack/runtime/engine.py",
                 ),
                 next_step=(
-                    "Thread the new `KVPageLayout` and `KVBlockManager` through the multi-layer stack, then remove `DynamicCache` from the full runtime loop."
+                    "Replace the dense `KVBlockManager` storage with page-table-backed allocation and keep `DynamicCache` only in the borrowed reference path."
                 ),
                 risk=(
                     "Attention kernels cannot become hardware-near while cache layout remains hidden behind a general-purpose framework cache."
@@ -135,7 +135,7 @@ GAP_REGISTRY: dict[str, GapReport] = {
                 title="Replace torch-backed math with a Qwen kernel catalog",
                 status="missing",
                 current_state=(
-                    "Current explicit probes still inherit dense math from PyTorch-backed `transformers` modules."
+                    "The semantic runtime no longer inherits block execution from `transformers`, but it still implements attention, MLP, and projection math with eager PyTorch operators."
                 ),
                 target_state=(
                     "A minimal kernel catalog exists for RMSNorm, rotary application, QKV/O projections, GQA prefill, GQA decode, "
@@ -180,8 +180,8 @@ GAP_REGISTRY: dict[str, GapReport] = {
                 title="Upgrade probes into a deterministic runtime loop",
                 status="in_progress",
                 current_state=(
-                    "A deterministic, single-request, full 64-layer runtime loop now runs on the remote machine with explicit greedy decode accounting, "
-                    "but it is still a script-level loop rather than a scheduler-ready runtime surface."
+                    "Deterministic, single-request, full 64-layer runtime loops now run on the remote machine in both borrowed and semantic modes with explicit greedy decode accounting, "
+                    "but they are still script-level loops rather than a scheduler-ready runtime surface."
                 ),
                 target_state=(
                     "A small runtime loop performs deterministic single-request prefill/decode first, then expands to comparable batching rules for benchmark work."
@@ -191,7 +191,7 @@ GAP_REGISTRY: dict[str, GapReport] = {
                     "experiments/models/qwen_explicit_runtime_loop.py",
                 ),
                 next_step=(
-                    "Move the working full-model loop behind a runtime-owned request and scheduler surface, then add deterministic batching rules."
+                    "Move the working semantic full-model loop behind a runtime-owned request and scheduler surface, then add deterministic batching rules."
                 ),
                 risk=(
                     "Benchmarking against vLLM or SGLang before this loop becomes a real runtime surface would still measure missing scheduler and runtime features, not only kernel quality."

@@ -85,6 +85,37 @@ class QwenSemanticBlockRuntime:
     dtype: torch.dtype
 
 
+@dataclass
+class QwenSemanticLayerRuntime:
+    layer_idx: int
+    input_layernorm_weight: torch.Tensor
+    q_proj_weight: torch.Tensor
+    k_proj_weight: torch.Tensor
+    v_proj_weight: torch.Tensor
+    o_proj_weight: torch.Tensor
+    q_norm_weight: torch.Tensor
+    k_norm_weight: torch.Tensor
+    post_attention_layernorm_weight: torch.Tensor
+    gate_proj_weight: torch.Tensor
+    up_proj_weight: torch.Tensor
+    down_proj_weight: torch.Tensor
+
+
+@dataclass
+class QwenSemanticStackRuntime:
+    model_path: Path
+    config: Qwen3Config
+    layer_indices: tuple[int, ...]
+    embed_tokens_weight: torch.Tensor
+    layers: tuple[QwenSemanticLayerRuntime, ...]
+    rope_inv_freq: torch.Tensor
+    attention_scaling: float
+    final_norm_weight: torch.Tensor | None
+    lm_head_weight: torch.Tensor | None
+    device: torch.device
+    dtype: torch.dtype
+
+
 def resolve_torch_dtype(name: str) -> torch.dtype:
     if name == "bfloat16":
         return torch.bfloat16
@@ -329,6 +360,97 @@ def materialize_qwen_semantic_block_runtime(
     )
 
 
+def _materialize_qwen_semantic_layer(
+    model_path: str | Path,
+    layer_idx: int,
+    target_device: torch.device,
+    torch_dtype: torch.dtype,
+) -> QwenSemanticLayerRuntime:
+    staged = stage_tensors_to_cpu(model_path, qwen_layer_tensor_names(layer_idx))
+    prefix = f"model.layers.{layer_idx}."
+
+    def staged_weight(name: str) -> torch.Tensor:
+        return staged[name].to(device=target_device, dtype=torch_dtype).contiguous()
+
+    return QwenSemanticLayerRuntime(
+        layer_idx=layer_idx,
+        input_layernorm_weight=staged_weight(f"{prefix}input_layernorm.weight"),
+        q_proj_weight=staged_weight(f"{prefix}self_attn.q_proj.weight"),
+        k_proj_weight=staged_weight(f"{prefix}self_attn.k_proj.weight"),
+        v_proj_weight=staged_weight(f"{prefix}self_attn.v_proj.weight"),
+        o_proj_weight=staged_weight(f"{prefix}self_attn.o_proj.weight"),
+        q_norm_weight=staged_weight(f"{prefix}self_attn.q_norm.weight"),
+        k_norm_weight=staged_weight(f"{prefix}self_attn.k_norm.weight"),
+        post_attention_layernorm_weight=staged_weight(f"{prefix}post_attention_layernorm.weight"),
+        gate_proj_weight=staged_weight(f"{prefix}mlp.gate_proj.weight"),
+        up_proj_weight=staged_weight(f"{prefix}mlp.up_proj.weight"),
+        down_proj_weight=staged_weight(f"{prefix}mlp.down_proj.weight"),
+    )
+
+
+def materialize_qwen_semantic_stack_runtime(
+    model_path: str | Path,
+    layer_indices: tuple[int, ...] | None = None,
+    device: str | torch.device = "cuda:0",
+    dtype: str | torch.dtype = "bfloat16",
+    include_output_head: bool = False,
+) -> QwenSemanticStackRuntime:
+    config = load_qwen_config(model_path)
+    resolved_layer_indices = resolve_layer_indices(config, layer_indices)
+    torch_dtype = resolve_torch_dtype(dtype) if isinstance(dtype, str) else dtype
+    target_device = torch.device(device)
+    head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
+    rope_theta = config.rope_parameters["rope_theta"]
+    rope_inv_freq = 1.0 / (
+        rope_theta
+        ** (torch.arange(0, head_dim, 2, device=target_device, dtype=torch.float32) / head_dim)
+    )
+
+    embed_tokens_weight = stage_tensors_to_cpu(model_path, ("model.embed_tokens.weight",))[
+        "model.embed_tokens.weight"
+    ].to(device=target_device, dtype=torch_dtype)
+    layers = tuple(
+        _materialize_qwen_semantic_layer(model_path, layer_idx, target_device, torch_dtype)
+        for layer_idx in resolved_layer_indices
+    )
+
+    final_norm_weight: torch.Tensor | None = None
+    lm_head_weight: torch.Tensor | None = None
+    if include_output_head:
+        staged = stage_tensors_to_cpu(model_path, qwen_output_tensor_names())
+        final_norm_weight = staged["model.norm.weight"].to(device=target_device, dtype=torch_dtype).contiguous()
+        lm_head_weight = staged["lm_head.weight"].to(device=target_device, dtype=torch_dtype).contiguous()
+
+    return QwenSemanticStackRuntime(
+        model_path=Path(model_path),
+        config=config,
+        layer_indices=resolved_layer_indices,
+        embed_tokens_weight=embed_tokens_weight,
+        layers=layers,
+        rope_inv_freq=rope_inv_freq,
+        attention_scaling=1.0,
+        final_norm_weight=final_norm_weight,
+        lm_head_weight=lm_head_weight,
+        device=target_device,
+        dtype=torch_dtype,
+    )
+
+
+def materialize_qwen_full_semantic_runtime(
+    model_path: str | Path,
+    device: str | torch.device = "cuda:0",
+    dtype: str | torch.dtype = "bfloat16",
+    include_output_head: bool = True,
+) -> QwenSemanticStackRuntime:
+    return materialize_qwen_semantic_stack_runtime(
+        model_path=model_path,
+        layer_indices=None,
+        device=device,
+        dtype=dtype,
+        include_output_head=include_output_head,
+    )
+
+
 def build_prefill_attention_mask(seq_len: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
     mask = torch.full((1, 1, seq_len, seq_len), torch.finfo(dtype).min, device=device, dtype=dtype)
     return torch.triu(mask, diagonal=1)
@@ -477,37 +599,46 @@ def build_qwen_kv_cache(
     return KVBlockManager(layout)
 
 
-def semantic_qwen_attention_forward(
-    runtime: QwenSemanticBlockRuntime,
+def _semantic_qwen_attention_forward(
+    config: Qwen3Config,
+    layer_idx: int,
+    q_proj_weight: torch.Tensor,
+    k_proj_weight: torch.Tensor,
+    v_proj_weight: torch.Tensor,
+    o_proj_weight: torch.Tensor,
+    q_norm_weight: torch.Tensor,
+    k_norm_weight: torch.Tensor,
+    rope_inv_freq: torch.Tensor,
+    attention_scaling: float,
     hidden_states: torch.Tensor,
     position_ids: torch.LongTensor,
     attention_mask: torch.Tensor | None,
     kv_cache: KVBlockManager | None = None,
 ) -> torch.Tensor:
     batch_size, query_len, _ = hidden_states.shape
-    head_dim = getattr(runtime.config, "head_dim", runtime.config.hidden_size // runtime.config.num_attention_heads)
-    query_shape = (batch_size, query_len, runtime.config.num_attention_heads, head_dim)
-    key_value_shape = (batch_size, query_len, runtime.config.num_key_value_heads, head_dim)
+    head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
+    query_shape = (batch_size, query_len, config.num_attention_heads, head_dim)
+    key_value_shape = (batch_size, query_len, config.num_key_value_heads, head_dim)
 
-    query_states = F.linear(hidden_states, runtime.q_proj_weight).view(query_shape)
-    key_states = F.linear(hidden_states, runtime.k_proj_weight).view(key_value_shape)
-    value_states = F.linear(hidden_states, runtime.v_proj_weight).view(key_value_shape)
+    query_states = F.linear(hidden_states, q_proj_weight).view(query_shape)
+    key_states = F.linear(hidden_states, k_proj_weight).view(key_value_shape)
+    value_states = F.linear(hidden_states, v_proj_weight).view(key_value_shape)
 
-    query_states = qwen_rmsnorm(query_states, runtime.q_norm_weight, runtime.config.rms_norm_eps).transpose(1, 2)
-    key_states = qwen_rmsnorm(key_states, runtime.k_norm_weight, runtime.config.rms_norm_eps).transpose(1, 2)
+    query_states = qwen_rmsnorm(query_states, q_norm_weight, config.rms_norm_eps).transpose(1, 2)
+    key_states = qwen_rmsnorm(key_states, k_norm_weight, config.rms_norm_eps).transpose(1, 2)
     value_states = value_states.transpose(1, 2)
 
     cos, sin = build_qwen_position_embeddings(
-        runtime.rope_inv_freq,
-        runtime.attention_scaling,
+        rope_inv_freq,
+        attention_scaling,
         hidden_states,
         position_ids,
     )
     query_states, key_states = qwen_apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
     if kv_cache is not None:
-        kv_cache.append(runtime.layer_idx, key_states, value_states)
-        key_states, value_states = kv_cache.get(runtime.layer_idx)
+        kv_cache.append(layer_idx, key_states, value_states)
+        key_states, value_states = kv_cache.get(layer_idx)
 
     attention_output = eager_qwen_attention_forward(
         query_states,
@@ -515,16 +646,80 @@ def semantic_qwen_attention_forward(
         value_states,
         attention_mask,
         scaling=head_dim**-0.5,
-        num_key_value_groups=runtime.config.num_attention_heads // runtime.config.num_key_value_heads,
+        num_key_value_groups=config.num_attention_heads // config.num_key_value_heads,
     )
     attention_output = attention_output.reshape(batch_size, query_len, -1).contiguous()
-    return F.linear(attention_output, runtime.o_proj_weight)
+    return F.linear(attention_output, o_proj_weight)
+
+
+def semantic_qwen_attention_forward(
+    runtime: QwenSemanticBlockRuntime,
+    hidden_states: torch.Tensor,
+    position_ids: torch.LongTensor,
+    attention_mask: torch.Tensor | None,
+    kv_cache: KVBlockManager | None = None,
+) -> torch.Tensor:
+    return _semantic_qwen_attention_forward(
+        config=runtime.config,
+        layer_idx=runtime.layer_idx,
+        q_proj_weight=runtime.q_proj_weight,
+        k_proj_weight=runtime.k_proj_weight,
+        v_proj_weight=runtime.v_proj_weight,
+        o_proj_weight=runtime.o_proj_weight,
+        q_norm_weight=runtime.q_norm_weight,
+        k_norm_weight=runtime.k_norm_weight,
+        rope_inv_freq=runtime.rope_inv_freq,
+        attention_scaling=runtime.attention_scaling,
+        hidden_states=hidden_states,
+        position_ids=position_ids,
+        attention_mask=attention_mask,
+        kv_cache=kv_cache,
+    )
 
 
 def semantic_qwen_mlp_forward(runtime: QwenSemanticBlockRuntime, hidden_states: torch.Tensor) -> torch.Tensor:
     gated = F.silu(F.linear(hidden_states, runtime.gate_proj_weight))
     up = F.linear(hidden_states, runtime.up_proj_weight)
     return F.linear(gated * up, runtime.down_proj_weight)
+
+
+def semantic_qwen_layer_forward(
+    config: Qwen3Config,
+    layer: QwenSemanticLayerRuntime,
+    rope_inv_freq: torch.Tensor,
+    attention_scaling: float,
+    hidden_states: torch.Tensor,
+    position_ids: torch.LongTensor,
+    attention_mask: torch.Tensor | None,
+    kv_cache: KVBlockManager | None = None,
+) -> torch.Tensor:
+    residual = hidden_states
+    hidden_states = qwen_rmsnorm(hidden_states, layer.input_layernorm_weight, config.rms_norm_eps)
+    hidden_states = _semantic_qwen_attention_forward(
+        config=config,
+        layer_idx=layer.layer_idx,
+        q_proj_weight=layer.q_proj_weight,
+        k_proj_weight=layer.k_proj_weight,
+        v_proj_weight=layer.v_proj_weight,
+        o_proj_weight=layer.o_proj_weight,
+        q_norm_weight=layer.q_norm_weight,
+        k_norm_weight=layer.k_norm_weight,
+        rope_inv_freq=rope_inv_freq,
+        attention_scaling=attention_scaling,
+        hidden_states=hidden_states,
+        position_ids=position_ids,
+        attention_mask=attention_mask,
+        kv_cache=kv_cache,
+    )
+    hidden_states = residual + hidden_states
+
+    residual = hidden_states
+    hidden_states = qwen_rmsnorm(hidden_states, layer.post_attention_layernorm_weight, config.rms_norm_eps)
+    gated = F.silu(F.linear(hidden_states, layer.gate_proj_weight))
+    up = F.linear(hidden_states, layer.up_proj_weight)
+    hidden_states = F.linear(gated * up, layer.down_proj_weight)
+    hidden_states = residual + hidden_states
+    return hidden_states
 
 
 def run_semantic_qwen_block(
@@ -595,6 +790,26 @@ def run_stack_forward(runtime: QwenStackRuntime, input_ids: torch.LongTensor) ->
     )
 
 
+def run_semantic_stack_forward(runtime: QwenSemanticStackRuntime, input_ids: torch.LongTensor) -> torch.Tensor:
+    input_ids = input_ids.to(runtime.device)
+    hidden_states = F.embedding(input_ids, runtime.embed_tokens_weight)
+    seq_len = hidden_states.shape[1]
+    position_ids = torch.arange(seq_len, device=runtime.device).unsqueeze(0)
+    attention_mask = build_prefill_attention_mask(seq_len, runtime.device, runtime.dtype)
+    for layer in runtime.layers:
+        hidden_states = semantic_qwen_layer_forward(
+            config=runtime.config,
+            layer=layer,
+            rope_inv_freq=runtime.rope_inv_freq,
+            attention_scaling=runtime.attention_scaling,
+            hidden_states=hidden_states,
+            position_ids=position_ids,
+            attention_mask=attention_mask,
+            kv_cache=None,
+        )
+    return hidden_states
+
+
 def run_single_layer_prefill(
     runtime: QwenBlockRuntime,
     input_ids: torch.LongTensor,
@@ -644,6 +859,38 @@ def run_semantic_single_layer_prefill(
         attention_mask,
         kv_cache=kv_cache,
     )
+    return hidden_states, kv_cache
+
+
+def run_semantic_stack_prefill(
+    runtime: QwenSemanticStackRuntime,
+    input_ids: torch.LongTensor,
+    page_size: int = 16,
+    max_seq_len: int | None = None,
+) -> tuple[torch.Tensor, KVBlockManager]:
+    input_ids = input_ids.to(runtime.device)
+    hidden_states = F.embedding(input_ids, runtime.embed_tokens_weight)
+    seq_len = hidden_states.shape[1]
+    position_ids = torch.arange(seq_len, device=runtime.device).unsqueeze(0)
+    attention_mask = build_prefill_attention_mask(seq_len, runtime.device, runtime.dtype)
+    kv_cache = build_qwen_kv_cache(
+        runtime.config,
+        max_seq_len=max_seq_len or seq_len,
+        device=runtime.device,
+        dtype=runtime.dtype,
+        page_size=page_size,
+    )
+    for layer in runtime.layers:
+        hidden_states = semantic_qwen_layer_forward(
+            config=runtime.config,
+            layer=layer,
+            rope_inv_freq=runtime.rope_inv_freq,
+            attention_scaling=runtime.attention_scaling,
+            hidden_states=hidden_states,
+            position_ids=position_ids,
+            attention_mask=attention_mask,
+            kv_cache=kv_cache,
+        )
     return hidden_states, kv_cache
 
 
@@ -720,6 +967,32 @@ def run_semantic_single_layer_decode(
     return hidden_states, kv_cache
 
 
+def run_semantic_stack_decode(
+    runtime: QwenSemanticStackRuntime,
+    input_ids: torch.LongTensor,
+    kv_cache: KVBlockManager,
+) -> tuple[torch.Tensor, KVBlockManager]:
+    input_ids = input_ids.to(runtime.device)
+    hidden_states = F.embedding(input_ids, runtime.embed_tokens_weight)
+    query_len = hidden_states.shape[1]
+    past_len = kv_cache.get_seq_length()
+    total_len = past_len + query_len
+    position_ids = torch.arange(past_len, total_len, device=runtime.device).unsqueeze(0)
+    attention_mask = build_decode_attention_mask(query_len, total_len, runtime.device, runtime.dtype)
+    for layer in runtime.layers:
+        hidden_states = semantic_qwen_layer_forward(
+            config=runtime.config,
+            layer=layer,
+            rope_inv_freq=runtime.rope_inv_freq,
+            attention_scaling=runtime.attention_scaling,
+            hidden_states=hidden_states,
+            position_ids=position_ids,
+            attention_mask=attention_mask,
+            kv_cache=kv_cache,
+        )
+    return hidden_states, kv_cache
+
+
 def run_stack_decode(
     runtime: QwenStackRuntime,
     input_ids: torch.LongTensor,
@@ -752,6 +1025,16 @@ def project_hidden_to_logits(runtime: QwenStackRuntime, hidden_states: torch.Ten
         raise ValueError("runtime does not include model.norm and lm_head")
     hidden_states = runtime.final_norm(hidden_states)
     return runtime.lm_head(hidden_states[:, -1:, :])
+
+
+def project_semantic_hidden_to_logits(
+    runtime: QwenSemanticStackRuntime,
+    hidden_states: torch.Tensor,
+) -> torch.Tensor:
+    if runtime.final_norm_weight is None or runtime.lm_head_weight is None:
+        raise ValueError("runtime does not include model.norm and lm_head")
+    hidden_states = qwen_rmsnorm(hidden_states, runtime.final_norm_weight, runtime.config.rms_norm_eps)
+    return F.linear(hidden_states[:, -1:, :], runtime.lm_head_weight)
 
 
 def normalize_stop_token_ids(stop_token_ids: int | tuple[int, ...] | list[int] | None) -> tuple[int, ...]:

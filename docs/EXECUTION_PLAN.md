@@ -92,7 +92,7 @@ Exit gate:
 
 ## Current blockers to clear
 
-1. Replace borrowed `Qwen3DecoderLayer` and `DynamicCache` semantics inside the working full-model loop with adapter-owned operators and KV layout.
-2. Translate the first transformer block into explicit kernel requirements instead of importing a monolithic runtime.
+1. Replace the current dense semantic KV tensor and probe-style residency flow with a fixed `Qwen3-32B + GB10` page/layout contract.
+2. Lower the working semantic full-model loop from eager PyTorch operators into explicit `cuTile/TileIR` kernel requirements.
 3. Prepare official baseline configurations for `vLLM` and `SGLang` on the same machine and model profile.
 4. Define the first benchmark table format, including software-complexity and agent-cost proxies, before adding a larger serve surface.

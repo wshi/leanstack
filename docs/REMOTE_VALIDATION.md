@@ -75,7 +75,7 @@ For a low-risk preflight, run:
 
 If ModelScope or PyPI becomes unreachable from the remote host, relay a wheel, archive, or extracted model directory from the Mac into `/home/pto/lean/models` and update the path file accordingly.
 
-## Latest confirmed explicit runtime result
+## Latest confirmed borrowed full runtime result
 
 Date confirmed: 2026-03-07
 
@@ -103,7 +103,39 @@ Key confirmed facts:
 - runtime-loop throughput was about `2.24 tokens/s`
 - GPU allocation after materialization was about `65.5 GiB`
 
-This confirms that the repo has crossed from a multi-layer probe into a full-model, single-request runtime loop, even though the loop still borrows layer semantics and cache behavior from `transformers`.
+This confirms that the repo crossed from a multi-layer probe into a full-model, single-request runtime loop, even though this borrowed mode still used `transformers` layer semantics and cache behavior.
+
+## Latest confirmed full semantic runtime result
+
+Date confirmed: 2026-03-07
+
+The following command completed successfully on the remote GB10 machine:
+
+```bash
+python3 experiments/models/qwen_explicit_runtime_loop.py \
+  --model-path /home/pto/lean/models/Qwen/Qwen3-32B \
+  --runtime-mode semantic \
+  --num-layers 0 \
+  --device cuda:0 \
+  --max-prefill-tokens 8 \
+  --max-new-tokens 4 \
+  --disable-thinking
+```
+
+Key confirmed facts:
+
+- all `64` decoder layers were materialized in semantic mode
+- the active cache path used `KVBlockManager`, not `DynamicCache`
+- `prompt_tokens=8`
+- `emitted_tokens=4`
+- `cache_seq_length=12`
+- `page_size=16`, `used_pages=1`
+- materialization took about `290.7s`
+- runtime loop time was about `2.09s`
+- runtime-loop throughput was about `1.92 tokens/s`
+- GPU allocation after materialization was about `65.5 GiB`
+
+This is the first remote proof that the active full-model loop can run on adapter-owned Qwen semantics and a leanstack-owned KV cache. It also exposes the next performance problem clearly: semantic ownership is in place, but the path still uses eager PyTorch math and probe-style staging, so it is not yet ready for a fair framework benchmark.
 
 ## Latest confirmed semantic block result
 
@@ -128,4 +160,4 @@ Key confirmed facts:
 - prefill `max_abs_diff` was `0.03125`
 - decode `max_abs_diff` was `0.125`
 
-This is the first remote proof that `leanstack` can begin replacing borrowed Qwen layer semantics and `DynamicCache` with its own explicit control surface while staying numerically close to the reference path.
+This is the first remote block-level proof that `leanstack` can replace borrowed Qwen layer semantics and `DynamicCache` with its own explicit control surface while staying numerically close to the reference path.
