@@ -52,6 +52,7 @@ class KVBlockManager:
         self.layer_page_table = [[-1 for _ in range(layout.num_pages)] for _ in range(layout.num_layers)]
         self.layer_page_counts = [0 for _ in range(layout.num_layers)]
         self.layer_seq_lens = [0 for _ in range(layout.num_layers)]
+        self.max_layer_seq_len = 0
 
     def _ensure_page(self, layer_idx: int, logical_page_idx: int) -> int:
         physical_page_idx = self.layer_page_table[layer_idx][logical_page_idx]
@@ -95,6 +96,7 @@ class KVBlockManager:
             self.key_pages[layer_idx, :, :, physical_page_idx, target_slice, :].copy_(key_states)
             self.value_pages[layer_idx, :, :, physical_page_idx, target_slice, :].copy_(value_states)
             self.layer_seq_lens[layer_idx] = end
+            self.max_layer_seq_len = max(self.max_layer_seq_len, end)
             return
 
         source_offset = 0
@@ -116,6 +118,33 @@ class KVBlockManager:
             cursor += copy_tokens
 
         self.layer_seq_lens[layer_idx] = end
+        self.max_layer_seq_len = max(self.max_layer_seq_len, end)
+
+    def _view_live_prefix(self, layer_idx: int, seq_len: int) -> tuple[torch.Tensor, torch.Tensor]:
+        page_count = self.layout.pages_for_tokens(seq_len)
+        allocated_pages = self.layer_page_counts[layer_idx]
+        if allocated_pages < page_count:
+            raise ValueError(
+                f"missing physical pages for layer {layer_idx}: have {allocated_pages}, need {page_count}"
+            )
+
+        keys = self.key_pages[layer_idx, :, :, :page_count].reshape(
+            self.layout.batch_size,
+            self.layout.num_key_value_heads,
+            page_count * self.layout.page_size,
+            self.layout.head_dim,
+        )[:, :, :seq_len, :]
+        values = self.value_pages[layer_idx, :, :, :page_count].reshape(
+            self.layout.batch_size,
+            self.layout.num_key_value_heads,
+            page_count * self.layout.page_size,
+            self.layout.head_dim,
+        )[:, :, :seq_len, :]
+        return keys, values
+
+    def append_and_get(self, layer_idx: int, key_states: torch.Tensor, value_states: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        self.append(layer_idx, key_states, value_states)
+        return self._view_live_prefix(layer_idx, self.layer_seq_lens[layer_idx])
 
     def get(self, layer_idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         seq_len = self.get_layer_seq_length(layer_idx)
@@ -131,35 +160,15 @@ class KVBlockManager:
                 dtype=self.layout.dtype,
             )
             return empty, empty.clone()
-
-        page_count = self.layout.pages_for_tokens(seq_len)
-        allocated_pages = self.layer_page_counts[layer_idx]
-        if allocated_pages < page_count:
-            raise ValueError(
-                f"missing physical pages for layer {layer_idx}: have {allocated_pages}, need {page_count}"
-            )
-
         # Pages are allocated monotonically for each layer, so the live prefix can be viewed
         # as a contiguous [tokens] axis without rebuilding it with torch.cat on every decode step.
-        keys = self.key_pages[layer_idx, :, :, :page_count].reshape(
-            self.layout.batch_size,
-            self.layout.num_key_value_heads,
-            page_count * self.layout.page_size,
-            self.layout.head_dim,
-        )[:, :, :seq_len, :]
-        values = self.value_pages[layer_idx, :, :, :page_count].reshape(
-            self.layout.batch_size,
-            self.layout.num_key_value_heads,
-            page_count * self.layout.page_size,
-            self.layout.head_dim,
-        )[:, :, :seq_len, :]
-        return keys, values
+        return self._view_live_prefix(layer_idx, seq_len)
 
     def get_layer_seq_length(self, layer_idx: int) -> int:
         return self.layer_seq_lens[layer_idx]
 
     def get_seq_length(self) -> int:
-        return max(self.layer_seq_lens, default=0)
+        return self.max_layer_seq_len
 
     def page_table(self, layer_idx: int) -> tuple[int, ...]:
         page_count = self.layout.pages_for_tokens(self.get_layer_seq_length(layer_idx))

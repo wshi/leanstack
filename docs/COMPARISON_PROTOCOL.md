@@ -148,7 +148,7 @@ Date confirmed: 2026-03-07
 The first exact-checkpoint whole-model data point now exists for `Qwen/Qwen3-1.7B-Base` on the remote GB10:
 
 - warmed `vLLM` on `decode_64_256`: about `46.40 generated tok/s`
-- current `leanstack` semantic full runtime on `decode_64_256`: about `44.55 runtime tok/s`
+- current `leanstack` semantic full runtime on `decode_64_256`: about `44.61 runtime tok/s`
 
 So the benchmark-first conclusion is no longer strongly negative, but it is still incomplete for the main steady-state decode target:
 

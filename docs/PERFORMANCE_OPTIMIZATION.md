@@ -24,6 +24,7 @@ Long-profile results on the remote GB10 machine:
 - after request-level RoPE cache + removing per-token host sync: about `37.30 tok/s`
 - after switching semantic RMSNorm to the built-in kernel: about `40.81 tok/s`
 - after fused `QKV`, fused `gate/up`, sliced RoPE lookup, and compile-friendly decode math: about `44.55 tok/s`
+- after decode-only KV append/get fusion, fixed-length request loop tightening, and decode `SDPA -> o_proj` tightening: about `44.61 tok/s`
 - warmed `vLLM` baseline on the same profile: about `46.40 tok/s`
 
 Short interactive compare (`max_new_tokens=16`) now shows:
@@ -33,7 +34,7 @@ Short interactive compare (`max_new_tokens=16`) now shows:
 
 So the repo now has two distinct truths:
 
-- on long steady-state decode, `leanstack` is still behind warmed `vLLM`, but the gap is now only about `4%`
+- on long steady-state decode, `leanstack` is still behind warmed `vLLM`, but the gap is now only about `3.9%`
 - on short interactive requests, the current `leanstack` path can already exceed the `vLLM` side-by-side path
 
 ## Optimizations already landed
@@ -167,6 +168,27 @@ Why it matters:
 - this cuts Python dispatch and small-tensor orchestration without breaking the explicit runtime ownership model
 - the current long-profile improvement from `40.81` to `44.55 tok/s` comes largely from this step
 
+### 9. Decode-only control-path tightening
+
+Files:
+
+- [kv_cache.py](/Users/wei/work/spark/leanstack/src/leanstack/runtime/kv_cache.py)
+- [qwen_explicit.py](/Users/wei/work/spark/leanstack/src/leanstack/runtime/qwen_explicit.py)
+- [qwen_explicit_runtime_loop.py](/Users/wei/work/spark/leanstack/experiments/models/qwen_explicit_runtime_loop.py)
+
+What changed:
+
+- decode now uses a `KVBlockManager.append_and_get()` path instead of separate `append()` and `get()` calls
+- the semantic decode path uses a query-length-1-specific layer helper instead of the more general semantic layer path
+- the benchmark/runtime loop now uses a fixed-length fast path when `--ignore-eos` removes stop-token logic
+- decode attention now tightens `SDPA -> transpose/reshape -> o_proj` into a smaller helper
+
+Why it matters:
+
+- these changes further reduce control-path overhead on the exact benchmark target
+- the measured gain is real but small: `44.55 -> 44.61 tok/s`
+- this is a useful signal that the remaining gap is no longer mainly Python/control-path noise
+
 ## What still dominates the remaining gap
 
 The active long-profile gap to warmed `vLLM` is now mostly concentrated in these surfaces:
@@ -176,6 +198,8 @@ The active long-profile gap to warmed `vLLM` is now mostly concentrated in these
 3. `down_proj`, `kv_proj`, and other decode linear kernels that still rely on generic eager PyTorch math
 
 The first two are especially important because the current benchmark target is single-request decode. At that shape, control-path overhead and repeated full-vocab projection matter a lot.
+
+Recent measurements also show that incremental Torch-side control-path cleanups now produce only marginal gains. That suggests the next material improvement must come from owning more of the decisive math kernels instead of continuing to shave generic runtime glue.
 
 ## Next optimization order
 

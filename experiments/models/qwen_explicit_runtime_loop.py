@@ -169,22 +169,40 @@ def run_request(
         stop_token_tensor = torch.tensor(stop_token_ids, device=device, dtype=torch.long)
     emitted_tokens = 0
 
-    with torch.inference_mode():
-        sync_device(device)
-        start = time.perf_counter()
-        if runtime_mode == "semantic":
-            prefill_hidden, cache = run_semantic_stack_prefill(
+    if runtime_mode == "semantic":
+        def prefill_once():
+            prefill_hidden, cache_state = run_semantic_stack_prefill(
                 runtime,
                 input_ids,
                 page_size=page_size,
                 max_seq_len=int(input_ids.shape[-1]) + max_new_tokens,
                 position_cache=position_cache,
             )
-            next_token = select_semantic_greedy_token(runtime, prefill_hidden)
-        else:
-            prefill_hidden, cache = run_stack_prefill(runtime, input_ids)
+            return select_semantic_greedy_token(runtime, prefill_hidden), cache_state
+
+        def decode_once(token: torch.LongTensor, cache_state):
+            decode_hidden, cache_state = run_semantic_stack_decode(
+                runtime,
+                token,
+                cache_state,
+                position_cache=position_cache,
+            )
+            return select_semantic_greedy_token(runtime, decode_hidden), cache_state
+    else:
+        def prefill_once():
+            prefill_hidden, cache_state = run_stack_prefill(runtime, input_ids)
             next_logits = project_hidden_to_logits(runtime, prefill_hidden)
-            next_token = select_greedy_token(next_logits)
+            return select_greedy_token(next_logits), cache_state
+
+        def decode_once(token: torch.LongTensor, cache_state):
+            decode_hidden, cache_state = run_stack_decode(runtime, token, cache_state)
+            next_logits = project_hidden_to_logits(runtime, decode_hidden)
+            return select_greedy_token(next_logits), cache_state
+
+    with torch.inference_mode():
+        sync_device(device)
+        start = time.perf_counter()
+        next_token, cache = prefill_once()
         sync_device(device)
         timings["prefill_seconds"] = time.perf_counter() - start
 
@@ -196,42 +214,45 @@ def run_request(
         else:
             sync_device(device)
             loop_start = time.perf_counter()
-        for step in range(max_new_tokens):
-            generated_gpu[step] = next_token.reshape(())
-            emitted_tokens = step + 1
-            should_stop = False
+        if stop_token_tensor is None:
+            if max_new_tokens > 0:
+                for step in range(max_new_tokens - 1):
+                    generated_gpu[step] = next_token.reshape(())
+                    if capture_decode_step_timings and device.type == "cuda":
+                        step_start_event = torch.cuda.Event(enable_timing=True)
+                        step_end_event = torch.cuda.Event(enable_timing=True)
+                        step_start_event.record()
+                    next_token, cache = decode_once(next_token, cache)
+                    if capture_decode_step_timings and device.type == "cuda":
+                        step_end_event.record()
+                        step_events.append((step_start_event, step_end_event))
+                generated_gpu[max_new_tokens - 1] = next_token.reshape(())
+                emitted_tokens = max_new_tokens
+        else:
+            for step in range(max_new_tokens):
+                generated_gpu[step] = next_token.reshape(())
+                emitted_tokens = step + 1
+                should_stop = False
 
-            if stop_token_tensor is not None:
                 stop_hit = torch.eq(next_token.reshape(1), stop_token_tensor).any()
                 if bool(stop_hit.item()):
                     stop_reason = "stop_token"
                     should_stop = True
 
-            if step == max_new_tokens - 1:
-                should_stop = True
+                if step == max_new_tokens - 1:
+                    should_stop = True
 
-            if should_stop:
-                break
+                if should_stop:
+                    break
 
-            if capture_decode_step_timings and device.type == "cuda":
-                step_start_event = torch.cuda.Event(enable_timing=True)
-                step_end_event = torch.cuda.Event(enable_timing=True)
-                step_start_event.record()
-            if runtime_mode == "semantic":
-                decode_hidden, cache = run_semantic_stack_decode(
-                    runtime,
-                    next_token,
-                    cache,
-                    position_cache=position_cache,
-                )
-                next_token = select_semantic_greedy_token(runtime, decode_hidden)
-            else:
-                decode_hidden, cache = run_stack_decode(runtime, next_token, cache)
-                next_logits = project_hidden_to_logits(runtime, decode_hidden)
-                next_token = select_greedy_token(next_logits)
-            if capture_decode_step_timings and device.type == "cuda":
-                step_end_event.record()
-                step_events.append((step_start_event, step_end_event))
+                if capture_decode_step_timings and device.type == "cuda":
+                    step_start_event = torch.cuda.Event(enable_timing=True)
+                    step_end_event = torch.cuda.Event(enable_timing=True)
+                    step_start_event.record()
+                next_token, cache = decode_once(next_token, cache)
+                if capture_decode_step_timings and device.type == "cuda":
+                    step_end_event.record()
+                    step_events.append((step_start_event, step_end_event))
 
         if capture_decode_step_timings and device.type == "cuda":
             loop_end_event.record()
