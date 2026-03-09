@@ -23,6 +23,8 @@ MAX_NEW_TOKENS_OVERRIDE="${MAX_NEW_TOKENS_OVERRIDE:-}"
 RESIDENT_REQUESTS="${RESIDENT_REQUESTS:-3}"
 WARMUP_REQUESTS="${WARMUP_REQUESTS:-1}"
 IGNORE_EOS="${IGNORE_EOS:-1}"
+COMPILE="${COMPILE:-0}"
+COMPILE_MODE="${COMPILE_MODE:-default}"
 SKIP_REMOTE_SYNC="${SKIP_REMOTE_SYNC:-0}"
 source "$ROOT/scripts/remote_helpers.sh"
 
@@ -44,6 +46,9 @@ if [[ -n \"$MAX_NEW_TOKENS_OVERRIDE\" ]]; then MAX_NEW_TOKENS=\"$MAX_NEW_TOKENS_
 mkdir -p \"$RESULT_DIR\"; \
 if [[ -z \"$BENCHMARK_TAG\" ]]; then BENCHMARK_TAG=\$(date -u +%Y%m%dT%H%M%SZ); fi; \
 OUTPUT_PATH=\"$RESULT_DIR/leanstack_${RUNTIME_MODE}_${PROFILE}_\${BENCHMARK_TAG}.json\"; \
+EXTRA_ARGS=\"\"; \
+if [[ \"$IGNORE_EOS\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --ignore-eos\"; fi; \
+if [[ \"$COMPILE\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --compile --compile-mode $COMPILE_MODE\"; fi; \
 python3 /home/pto/lean/repo/experiments/models/qwen_explicit_runtime_loop.py \
   --model-path \"\$MODEL_REF\" \
   --runtime-mode \"$RUNTIME_MODE\" \
@@ -57,7 +62,7 @@ python3 /home/pto/lean/repo/experiments/models/qwen_explicit_runtime_loop.py \
   --max-new-tokens \"\$MAX_NEW_TOKENS\" \
   --resident-requests \"$RESIDENT_REQUESTS\" \
   --warmup-requests \"$WARMUP_REQUESTS\" \
-  $( [[ "$IGNORE_EOS" == "1" ]] && printf '%s' '--ignore-eos' ) \
+  \$EXTRA_ARGS \
   --output \"\$OUTPUT_PATH\" > /dev/null; \
 cat \"\$OUTPUT_PATH\""
 

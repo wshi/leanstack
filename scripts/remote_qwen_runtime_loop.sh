@@ -20,6 +20,8 @@ PAGE_SIZE="${PAGE_SIZE:-16}"
 DEVICE="${DEVICE:-cuda:0}"
 IGNORE_EOS="${IGNORE_EOS:-0}"
 SKIP_FINAL_CACHE_ADVANCE="${SKIP_FINAL_CACHE_ADVANCE:-0}"
+COMPILE="${COMPILE:-0}"
+COMPILE_MODE="${COMPILE_MODE:-default}"
 source "$ROOT/scripts/remote_helpers.sh"
 
 "$ROOT/scripts/remote_sync.sh"
@@ -35,6 +37,7 @@ if [[ \"$THINKING_MODE\" == \"enable\" ]]; then EXTRA_ARGS=\"--enable-thinking\"
 if [[ \"$THINKING_MODE\" == \"disable\" ]]; then EXTRA_ARGS=\"--disable-thinking\"; fi; \
 if [[ \"$IGNORE_EOS\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --ignore-eos\"; fi; \
 if [[ \"$SKIP_FINAL_CACHE_ADVANCE\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --skip-final-cache-advance\"; fi; \
+if [[ \"$COMPILE\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --compile --compile-mode $COMPILE_MODE\"; fi; \
 python3 /home/pto/lean/repo/experiments/models/qwen_explicit_runtime_loop.py --model-path \"\$MODEL_REF\" --runtime-mode \"$RUNTIME_MODE\" --num-layers \"$NUM_LAYERS\" --device \"$DEVICE\" --prompt \"$PROMPT\" --prompt-format \"$PROMPT_FORMAT\" --max-prefill-tokens \"$MAX_PREFILL_TOKENS\" --max-new-tokens \"$MAX_NEW_TOKENS\" --page-size \"$PAGE_SIZE\" \$EXTRA_ARGS"
 
 run_remote_script "$COMMAND"

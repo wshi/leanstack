@@ -22,6 +22,7 @@ from leanstack.runtime.qwen_explicit import (
     run_stack_prefill,
     select_semantic_greedy_token,
     select_greedy_token,
+    try_compile,
 )
 
 
@@ -44,6 +45,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stop-token-id", action="append", type=int, default=None)
     parser.add_argument("--ignore-eos", action="store_true")
     parser.add_argument("--skip-final-cache-advance", action="store_true")
+    parser.add_argument("--compile", action="store_true", help="Enable torch.compile on the decode hot path.")
+    parser.add_argument(
+        "--compile-mode",
+        choices=("default", "reduce-overhead", "max-autotune"),
+        default="default",
+    )
     thinking = parser.add_mutually_exclusive_group()
     thinking.add_argument("--enable-thinking", action="store_true")
     thinking.add_argument("--disable-thinking", action="store_true")
@@ -139,6 +146,10 @@ def materialize_runtime(args: argparse.Namespace):
     )
 
 
+def select_borrowed_greedy_token(runtime, hidden_states: torch.Tensor) -> torch.LongTensor:
+    return select_greedy_token(project_hidden_to_logits(runtime, hidden_states))
+
+
 def run_request(
     *,
     runtime,
@@ -151,6 +162,8 @@ def run_request(
     skip_final_cache_advance: bool,
     stop_token_ids: tuple[int, ...],
     capture_decode_step_timings: bool,
+    decode_fn,
+    select_fn,
 ) -> dict:
     generated_gpu = torch.empty((max_new_tokens,), device=device, dtype=torch.long)
     decode_step_seconds: list[float] = []
@@ -178,26 +191,24 @@ def run_request(
                 max_seq_len=int(input_ids.shape[-1]) + max_new_tokens,
                 position_cache=position_cache,
             )
-            return select_semantic_greedy_token(runtime, prefill_hidden), cache_state
+            return select_fn(runtime, prefill_hidden), cache_state
 
         def decode_once(token: torch.LongTensor, cache_state):
-            decode_hidden, cache_state = run_semantic_stack_decode(
+            decode_hidden, cache_state = decode_fn(
                 runtime,
                 token,
                 cache_state,
                 position_cache=position_cache,
             )
-            return select_semantic_greedy_token(runtime, decode_hidden), cache_state
+            return select_fn(runtime, decode_hidden), cache_state
     else:
         def prefill_once():
             prefill_hidden, cache_state = run_stack_prefill(runtime, input_ids)
-            next_logits = project_hidden_to_logits(runtime, prefill_hidden)
-            return select_greedy_token(next_logits), cache_state
+            return select_fn(runtime, prefill_hidden), cache_state
 
         def decode_once(token: torch.LongTensor, cache_state):
-            decode_hidden, cache_state = run_stack_decode(runtime, token, cache_state)
-            next_logits = project_hidden_to_logits(runtime, decode_hidden)
-            return select_greedy_token(next_logits), cache_state
+            decode_hidden, cache_state = decode_fn(runtime, token, cache_state)
+            return select_fn(runtime, decode_hidden), cache_state
 
     with torch.inference_mode():
         sync_device(device)
@@ -368,6 +379,23 @@ def main() -> int:
     timings["materialize_seconds"] = time.perf_counter() - start
     memory["after_materialize"] = snapshot_cuda_memory(device)
 
+    if args.runtime_mode == "semantic":
+        decode_fn = run_semantic_stack_decode
+        select_fn = select_semantic_greedy_token
+    else:
+        decode_fn = run_stack_decode
+        select_fn = select_borrowed_greedy_token
+
+    compiled_decode = False
+    compiled_select = False
+    if args.compile:
+        compiled_decode_fn = try_compile(decode_fn, mode=args.compile_mode)
+        compiled_select_fn = try_compile(select_fn, mode=args.compile_mode)
+        compiled_decode = compiled_decode_fn is not decode_fn
+        compiled_select = compiled_select_fn is not select_fn
+        decode_fn = compiled_decode_fn
+        select_fn = compiled_select_fn
+
     warmup_results: list[dict] = []
     measured_results: list[dict] = []
     total_requests = args.warmup_requests + args.resident_requests
@@ -383,6 +411,8 @@ def main() -> int:
             skip_final_cache_advance=args.skip_final_cache_advance,
             stop_token_ids=stop_token_ids,
             capture_decode_step_timings=args.capture_decode_step_timings,
+            decode_fn=decode_fn,
+            select_fn=select_fn,
         )
         if request_idx < args.warmup_requests:
             warmup_results.append(request_result)
@@ -401,6 +431,9 @@ def main() -> int:
         "benchmark_profile": args.benchmark_profile or None,
         "device": args.device,
         "dtype": args.dtype,
+        "compiled_decode": compiled_decode,
+        "compiled_select": compiled_select,
+        "compile_mode": args.compile_mode if args.compile else None,
         "attn_implementation": runtime.config._attn_implementation,
         "prompt_format": resolved_prompt_format,
         "thinking_mode": (

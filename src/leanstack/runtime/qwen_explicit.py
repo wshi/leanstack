@@ -596,6 +596,20 @@ def _compile_reduce_overhead(fn: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
+def try_compile(fn: Callable[..., Any], mode: str = "default") -> Callable[..., Any]:
+    if not hasattr(torch, "compile"):
+        return fn
+    try:
+        return torch.compile(fn, mode=mode, options={"triton.cudagraphs": False})
+    except TypeError:
+        try:
+            return torch.compile(fn, mode=mode)
+        except Exception:
+            return fn
+    except Exception:
+        return fn
+
+
 def qwen_rmsnorm(hidden_states: torch.Tensor, weight: torch.Tensor, eps: float) -> torch.Tensor:
     if _HAS_RMS_NORM:
         return F.rms_norm(
