@@ -40,6 +40,7 @@ The appliance reset in this repo does six concrete things:
 - `docs/ARCHITECTURE.md`: stack boundaries and replacement strategy.
 - `docs/BENCHMARK_PLAN.md`: benchmark methodology and comparison rules.
 - `docs/COMPARISON_PROTOCOL.md`: staged comparison gates from framework baselines to cuTile kernels to full-stack results.
+- `docs/THROUGHPUT_30_PLAN.md`: the stronger `>= 1.30x warmed vLLM` target, why packing alone is not enough, and the exact speculative-decode plan.
 - `src/leanstack/appliance.py`: first-principles appliance reset plus `leanpack`/`leanserve` plan renderers.
 - `src/leanstack/leanserve.py`: packed-artifact loader, resident buffer planner, and semantic runtime materializer for `leanserve`.
 - `docs/LEANPACK_FORMAT.md`: initial serving-artifact format for `leanpack/v0`.
@@ -160,7 +161,7 @@ The next hard gates are:
 - materialize the semantic runtime directly from `leanpack`, not from public checkpoint tensor names
 - move decisive cuTile kernels from microbenchmarks into that appliance path
 
-The newest remote fact is that the packed `leanpack -> leanserve` path now runs the full exact-bucket `decode_64_256` profile at about `46.25 tok/s`, which narrowly clears the current warmed `vLLM` number of about `46.06 tok/s`. The result is real, but the margin is still too small to count as a decisive win.
+The newest remote fact is that the packed `leanpack -> leanserve` path now runs the full exact-bucket `decode_64_256` profile at about `46.25 tok/s`, which narrowly clears the current warmed `vLLM` number of about `46.06 tok/s`. The result is real, but the margin is still too small to count as a decisive win. The active bar is now at least `30%` over warmed `vLLM`, so the next design step is no longer "more glue cleanup"; it is exact speculative decode on top of the packed appliance.
 
 The deeper hypothesis is that, once compatibility is treated as optional instead of mandatory, an agent can spend a bounded token budget to generate a more direct and efficient software path for a specific model-chip pair.
 

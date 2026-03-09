@@ -1,6 +1,6 @@
 # Implementation Gaps
 
-Date verified: 2026-03-07
+Date verified: 2026-03-09
 
 ## Target facts
 
@@ -45,6 +45,15 @@ The key engineering task is:
 2. keep `Qwen3-1.7B-Base` semantics and BF16 checkpoint ownership explicit
 3. lower each stable semantic unit into `cuTile -> TileIR -> cubin`
 4. inspect PTX and SASS for the hot kernels
+
+That is still necessary, but it is no longer sufficient for the new claim bar.
+
+The repo now has a stronger performance target:
+
+- `>= 1.30x` warmed `vLLM` on the primary exact-bucket decode profile
+
+That means the missing gap is no longer just "own the runtime."
+It is now "reduce full-model decode work per committed token."
 
 ## Gap matrix
 
@@ -118,15 +127,25 @@ The key engineering task is:
 - Target:
   - benchmark only after the BF16 runtime slice exists for the 1.7B target
 - Why this matters:
-  - otherwise the comparison measures a legacy reference path, not the active thesis
+- otherwise the comparison measures a legacy reference path, not the active thesis
+
+### 7. Exact speculative decode
+
+- Current:
+  - the repo now has a packed appliance path that narrowly clears warmed `vLLM`
+  - the repo does not yet have a stronger asymmetry capable of creating a `30%` lead
+- Target:
+  - an exact self-speculative decode path with draft/verifier split, packed metadata, and acceptance accounting
+- Why this matters:
+  - without reducing full-model decode steps per committed token, the current BF16 packed path is unlikely to exceed warmed `vLLM` by `30%`
 
 ## Recommended closure order
 
-1. own the `Qwen3-1.7B-Base` BF16 checkpoint contract
-2. port the old Qwen semantic path onto the new 1.7B BF16 contract
+1. own the `Qwen3-1.7B-Base` BF16 checkpoint and packed-artifact contract
+2. push the packed BF16 appliance to its real non-spec ceiling
 3. lower decisive BF16 kernels into repeatable `sm_121` artifacts on the cuTile path
-4. stand up the first runtime loop
-5. only then freeze baseline configs for external frameworks
+4. stand up draft/verifier ownership for exact speculative decode
+5. only then freeze the official `1.30x warmed vLLM` comparison gate
 
 ## Compiler-path policy
 

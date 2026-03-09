@@ -1,6 +1,6 @@
 # Execution Plan
 
-Date: 2026-03-07
+Date: 2026-03-09
 
 ## Phase 0: Ground the environment
 
@@ -75,6 +75,32 @@ Exit gate:
 
 - the resident appliance can serve `Qwen3-1.7B-Base` BF16 through the packed artifact path on the remote machine
 
+## Phase 4a: Establish the BF16 non-spec ceiling
+
+Deliverables:
+
+- packed-artifact full-model benchmark on the official exact-bucket decode profile
+- resident layout accounting for weights, KV, and scratch
+- `cuTile` ownership plan for the remaining decisive decode kernels
+- explicit non-spec throughput ceiling estimate
+
+Exit gate:
+
+- the packed BF16 appliance reaches at least `52 tok/s` on `decode_64_256`, or the repo explicitly records that the `30%` target is unlikely without an algorithmic asymmetry
+
+## Phase 4b: Build exact speculative decode
+
+Deliverables:
+
+- one draft/verifier split for `Qwen3-1.7B-Base`
+- packed artifact metadata for draft and verifier paths
+- proposal/verify/commit runtime loop
+- acceptance-ratio and committed-tokens-per-pass counters
+
+Exit gate:
+
+- the appliance can run exact self-speculative decode on the official exact-bucket profiles and reports acceptance metrics as first-class outputs
+
 ## Phase 5: Benchmark Against Framework Baselines
 
 Deliverables:
@@ -88,6 +114,7 @@ Deliverables:
 Exit gate:
 
 - a first comparison table exists for a comparable `Qwen3-1.7B-Base` BF16 appliance profile on the same machine, including a go / no-go conclusion
+- the primary go condition is now `>= 1.30x` warmed `vLLM` on `decode_64_256`
 
 ## Phase 6: Minimal Serving Surface
 
@@ -104,7 +131,8 @@ Exit gate:
 
 ## Current blockers to clear
 
-1. Define the `leanpack` output format instead of treating the public checkpoint as the serving format.
-2. Separate semantic ownership, checkpoint ownership, and serving-artifact ownership for `Qwen3-1.7B-Base` BF16.
-3. Lift the decisive hot-kernel wins into the resident appliance path and close the `kv_proj/down_proj` gap.
-4. Keep the legacy `Qwen3-32B BF16` path as reference data only, not as the active optimization target.
+1. Push the packed BF16 appliance to its real non-spec ceiling instead of assuming packing alone can yield a `30%` win.
+2. Separate semantic ownership, checkpoint ownership, serving-artifact ownership, and draft/verifier ownership for `Qwen3-1.7B-Base` BF16.
+3. Lift the decisive hot-kernel wins into the resident appliance path and close the `kv_proj/down_proj/logits` gap.
+4. Stand up exact self-speculative decode if the non-spec ceiling remains below the `1.30x warmed vLLM` target.
+5. Keep the legacy `Qwen3-32B BF16` path as reference data only, not as the active optimization target.

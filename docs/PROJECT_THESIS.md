@@ -1,6 +1,6 @@
 # Project Thesis
 
-Date: 2026-03-07
+Date: 2026-03-09
 
 ## Thesis
 
@@ -17,6 +17,7 @@ The project thesis is narrower and harder:
 - treat compatibility-driven software complexity as a tax, not a requirement
 - build an appliance, not a generic runtime: `leanpack` for serving artifacts and `leanserve` for a static resident decode service
 - measure whether an agent-built, hardware-near appliance can stay materially simpler than the current framework-heavy ecosystem while also showing a real performance advantage on that fixed contract
+- treat "slightly faster than `vLLM`" as insufficient; the active aspiration is now a `30%+` throughput win on the primary official decode profile
 
 ## Central hypothesis
 
@@ -157,10 +158,12 @@ The intended outcome is that a bounded agent token budget can replace a large am
 - `vLLM` and `SGLang` remain required comparison points when they can run the same BF16 checkpoint or a clearly labeled equivalent snapshot
 - `llama.cpp` is tracked as a secondary deployment reference when the weight format is not apples-to-apples
 - the result table includes `generated tokens/s`, latency, memory use, process shape, operational complexity, and software-stack size proxies
+- the primary throughput target is no longer parity; the primary target is `>= 1.30x` warmed `vLLM` on the main exact-bucket decode profile
 
 ### Go / no-go success
 
 - if `leanstack` cannot show a real performance or complexity advantage on the fixed `Qwen3-1.7B-Base BF16 + GB10` appliance contract, the repo should say so directly
+- if the packed BF16 appliance can only slightly beat `vLLM`, the repo should not claim that the thesis is proven; the repo should then require a stronger asymmetry such as exact self-speculative decode
 - if the public `cuTile` path cannot clear FP8 or FP4 later, that result is part of the research outcome rather than something to hide
 
 ### Research success

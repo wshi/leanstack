@@ -8,6 +8,10 @@ The comparison must answer one narrow question:
 
 Can a `cuTile/TileIR`-native stack for `Qwen/Qwen3-1.7B-Base` on `GB10 / sm_121` beat compatibility-heavy frameworks on throughput while staying simpler?
 
+The stronger current version of that question is:
+
+Can it beat warmed `vLLM` by at least `30%` on the primary official decode profile?
+
 ## Fixed contract
 
 - model: `Qwen/Qwen3-1.7B-Base`
@@ -147,6 +151,12 @@ Do not make a positive performance claim unless all of the following are true:
 3. the runtime slices are stable and GPU-resident
 4. the full-model result beats at least one framework on a key throughput metric without hiding a major memory or complexity regression
 
+Do not make a strong thesis claim unless all of the following are true:
+
+1. the packed appliance path reaches `>= 1.30x` warmed `vLLM` on `decode_64_256`
+2. the result survives repeated hot runs
+3. the result does not depend on a hidden mismatch in prompt buckets, checkpoint format, or stopping rules
+
 ## First measured outcome
 
 Date confirmed: 2026-03-07
@@ -167,6 +177,15 @@ So the benchmark-first conclusion is no longer negative for the main steady-stat
 - the packed appliance path has now cleared the warmed-framework throughput bar, but only narrowly
 - the margin is still too small to support a strong claim about the superiority of the specialized stack
 - it is therefore not enough to say that ownership is solved; the next work must target the remaining decode hot spots directly and widen the lead
+
+Numerically, with the current known warmed `vLLM` number on `decode_64_256`:
+
+- baseline: `46.06 tok/s`
+- `30%` target: `59.88 tok/s`
+- current packed appliance: `46.25 tok/s`
+
+So the active gap is no longer "beat vLLM at all."
+The active gap is now "find another `13.63 tok/s`."
 
 The current repo still has positive intermediate evidence:
 
