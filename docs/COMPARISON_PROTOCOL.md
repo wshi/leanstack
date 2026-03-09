@@ -1,6 +1,6 @@
 # Comparison Protocol
 
-Date verified: 2026-03-07
+Date verified: 2026-03-09
 
 ## Goal
 
@@ -160,12 +160,13 @@ After correcting the prompt contract to an exact `64-token` bucket on 2026-03-09
 
 - warmed `vLLM` on `decode_64_256`: about `46.06 generated tok/s`, `prompt_tokens=64`
 - current `leanstack` semantic full runtime on `decode_64_256`: about `44.54 runtime tok/s`, `prompt_tokens=64`
+- current `leanstack` packed `leanpack -> leanserve` path on `decode_64_256`: about `46.25 runtime tok/s`, `prompt_tokens=64`
 
-So the benchmark-first conclusion is no longer strongly negative, but it is still incomplete for the main steady-state decode target:
+So the benchmark-first conclusion is no longer negative for the main steady-state decode target, but it is still not strong enough:
 
-- the specialized stack has not yet cleared the warmed-framework throughput bar
-- the remaining throughput gap is now small enough that kernel ownership on the decisive decode path matters more than generic control-path cleanup
-- it is therefore not enough to say that ownership is solved; the next work must target the remaining decode hot spots directly
+- the packed appliance path has now cleared the warmed-framework throughput bar, but only narrowly
+- the margin is still too small to support a strong claim about the superiority of the specialized stack
+- it is therefore not enough to say that ownership is solved; the next work must target the remaining decode hot spots directly and widen the lead
 
 The current repo still has positive intermediate evidence:
 

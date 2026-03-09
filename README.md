@@ -41,6 +41,8 @@ The appliance reset in this repo does six concrete things:
 - `docs/BENCHMARK_PLAN.md`: benchmark methodology and comparison rules.
 - `docs/COMPARISON_PROTOCOL.md`: staged comparison gates from framework baselines to cuTile kernels to full-stack results.
 - `src/leanstack/appliance.py`: first-principles appliance reset plus `leanpack`/`leanserve` plan renderers.
+- `src/leanstack/leanserve.py`: packed-artifact loader, resident buffer planner, and semantic runtime materializer for `leanserve`.
+- `docs/LEANPACK_FORMAT.md`: initial serving-artifact format for `leanpack/v0`.
 - `docs/EXECUTION_PLAN.md`: phased build plan and verification gates.
 - `docs/IMPLEMENTATION_GAPS.md`: structured gap analysis from borrowed `transformers` semantics to adapter-owned `cuTile/TileIR` kernels.
 - `docs/PRECISION_GATES.md`: the active BF16 / FP8 / FP4 gate results for the public cuTile stack on `sm_121`.
@@ -60,6 +62,8 @@ The appliance reset in this repo does six concrete things:
 - `experiments/models/qwen_explicit_runtime_loop.py`: explicit full-model runtime loop with greedy decode accounting.
 - `experiments/models/qwen_semantic_block_probe.py`: adapter-owned Qwen block semantics plus page-based KV cache probe.
 - `scripts/remote_*.sh`: remote bootstrap, sync, relay, probe, install, and smoke scripts.
+- `scripts/remote_leanpack_build.sh`: remote builder for the first serving-only packed artifact.
+- `scripts/remote_leanserve_layout.sh`: remote inspector for the resident `leanserve` layout against a real packed artifact.
 - `src/leanstack/`: Python control plane, planning, and repo utilities.
 - `skills/leanstack/`: English Codex skill for operating the stack.
 
@@ -73,6 +77,9 @@ PYTHONPATH=src python3 -m leanstack.cli show-comparison-plan
 PYTHONPATH=src python3 -m leanstack.cli show-appliance-reset --model qwen
 PYTHONPATH=src python3 -m leanstack.cli show-leanpack-plan --model qwen
 PYTHONPATH=src python3 -m leanstack.cli show-leanserve-plan --model qwen
+PYTHONPATH=src python3 -m leanstack.cli build-leanpack --model qwen --model-path /path/to/Qwen3-1.7B-Base --output-dir ./artifacts/leanpack-qwen --manifest-only --overwrite
+PYTHONPATH=src python3 -m leanstack.cli inspect-leanpack --pack-dir ./artifacts/leanpack-qwen
+PYTHONPATH=src python3 -m leanstack.cli show-leanserve-layout --model qwen --pack-dir ./artifacts/leanpack-qwen
 PYTHONPATH=src python3 -m leanstack.cli list-hot-kernel-cases --default-only
 PYTHONPATH=src python3 -m leanstack.cli remote-env
 PYTHONPATH=src python3 -m leanstack.cli show-contract --model qwen
@@ -86,6 +93,8 @@ PYTHONPATH=src python3 -m leanstack.cli show-gaps --model qwen
 ./scripts/remote_qwen_hot_kernel_bench.sh
 ./scripts/remote_model_probe.sh
 MODEL_ID=Qwen/Qwen3-1.7B-Base ./scripts/remote_qwen_fetch.sh
+MODEL_ID=Qwen/Qwen3-1.7B-Base OVERWRITE=1 ./scripts/remote_leanpack_build.sh
+./scripts/remote_leanserve_layout.sh
 MODEL_ID=Qwen/Qwen3-1.7B-Base ./scripts/remote_qwen_baseline.sh
 MODEL_NAME=qwen3-1.7b-base ./scripts/remote_openai_profile_sweep.sh
 ```
@@ -148,7 +157,10 @@ The next hard gates are:
 
 - define the offline `leanpack` artifact format for `Qwen3-1.7B-Base` BF16
 - define the resident `leanserve` appliance contract for exact prompt buckets on `GB10 / sm_121`
+- materialize the semantic runtime directly from `leanpack`, not from public checkpoint tensor names
 - move decisive cuTile kernels from microbenchmarks into that appliance path
+
+The newest remote fact is that the packed `leanpack -> leanserve` path now runs the full exact-bucket `decode_64_256` profile at about `46.25 tok/s`, which narrowly clears the current warmed `vLLM` number of about `46.06 tok/s`. The result is real, but the margin is still too small to count as a decisive win.
 
 The deeper hypothesis is that, once compatibility is treated as optional instead of mandatory, an agent can spend a bounded token budget to generate a more direct and efficient software path for a specific model-chip pair.
 

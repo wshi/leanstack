@@ -9,6 +9,7 @@ MODEL_ID="${MODEL_ID:-Qwen/Qwen3-1.7B-Base}"
 MODEL_KEY="${MODEL_ID//\//__}"
 MODEL_PATH_FILE="${MODEL_PATH_FILE:-$REMOTE_HOME/models/$MODEL_KEY.path}"
 MODEL_PATH="${MODEL_PATH:-}"
+PACK_DIR="${PACK_DIR:-}"
 PROFILE="${PROFILE:-decode_64_256}"
 RUNTIME_MODE="${RUNTIME_MODE:-semantic}"
 NUM_LAYERS="${NUM_LAYERS:-0}"
@@ -51,6 +52,7 @@ OUTPUT_PATH=\"$RESULT_DIR/leanstack_${RUNTIME_MODE}_${PROFILE}_\${BENCHMARK_TAG}
 EXTRA_ARGS=\"\"; \
 if [[ \"$IGNORE_EOS\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --ignore-eos\"; fi; \
 EXTRA_ARGS=\"\$EXTRA_ARGS --exact-prefill-bucket\"; \
+if [[ -n \"$PACK_DIR\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --pack-dir $PACK_DIR\"; fi; \
 if [[ \"$COMPILE\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --compile --compile-mode $COMPILE_MODE\"; fi; \
 python3 /home/pto/lean/repo/experiments/models/qwen_explicit_runtime_loop.py \
   --model-path \"\$MODEL_REF\" \

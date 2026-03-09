@@ -1,6 +1,6 @@
 # Performance Optimization
 
-Date verified: 2026-03-07
+Date verified: 2026-03-09
 
 ## Goal
 
@@ -28,15 +28,17 @@ Long-profile results on the remote GB10 machine:
 - warmed `vLLM` baseline on the same profile: about `46.40 tok/s`
 - after enforcing an exact `64-token` prompt bucket for the official `decode_64_256` profile: about `44.54 tok/s`
 - warmed `vLLM` on the same exact-bucket profile: about `46.06 tok/s`
+- after moving the full semantic runtime onto a `leanpack` artifact with resident weights and exact-bucket KV planning: about `46.25 tok/s`
 
 Short interactive compare (`max_new_tokens=16`) now shows:
 
 - `leanstack`: about `41.27 tok/s`
 - `vLLM`: about `37.69 tok/s`
 
-So the repo now has two distinct truths:
+So the repo now has three distinct truths:
 
-- on long steady-state decode, `leanstack` is still behind warmed `vLLM`, but the gap is now only about `3.9%`
+- the old checkpoint-driven semantic runtime still trails warmed `vLLM`
+- the packed `leanpack -> leanserve` path has now crossed the warmed `vLLM` bar on the exact `decode_64_256` profile, but only narrowly
 - on short interactive requests, the current `leanstack` path can already exceed the `vLLM` side-by-side path
 
 ## Optimizations already landed
@@ -191,9 +193,29 @@ Why it matters:
 - the measured gain is real but small: `44.55 -> 44.61 tok/s`
 - this is a useful signal that the remaining gap is no longer mainly Python/control-path noise
 
+### 10. Leanpack-to-leanserve materialization
+
+Files:
+
+- [pack.py](/Users/wei/work/spark/leanstack/src/leanstack/pack.py)
+- [leanserve.py](/Users/wei/work/spark/leanstack/src/leanstack/leanserve.py)
+- [qwen_explicit_runtime_loop.py](/Users/wei/work/spark/leanstack/experiments/models/qwen_explicit_runtime_loop.py)
+
+What changed:
+
+- the public checkpoint is now converted once into a serving-only `leanpack` artifact with fused `QKV` and fused `gate/up`
+- the runtime can materialize the full semantic stack directly from that artifact via `--pack-dir`
+- `leanserve` now computes an explicit resident layout: packed weights, exact-bucket KV extents, and decode scratch estimates
+
+Why it matters:
+
+- the runtime no longer stages layers from Hugging Face tensor names and shard layout on the serving path
+- the packed path reduces runtime uncertainty and gets the control plane closer to an actual appliance
+- on the exact `decode_64_256` profile, this moved the full-model result from `44.54 tok/s` to about `46.25 tok/s`, which narrowly clears the current warmed `vLLM` number
+
 ## What still dominates the remaining gap
 
-The active long-profile gap to warmed `vLLM` is now mostly concentrated in these surfaces:
+The remaining performance uncertainty is now mostly concentrated in these surfaces:
 
 1. logits projection
 2. Python-driven token loop structure
@@ -201,7 +223,7 @@ The active long-profile gap to warmed `vLLM` is now mostly concentrated in these
 
 The first two are especially important because the current benchmark target is single-request decode. At that shape, control-path overhead and repeated full-vocab projection matter a lot.
 
-Recent measurements also show that incremental Torch-side control-path cleanups now produce only marginal gains. That suggests the next material improvement must come from owning more of the decisive math kernels instead of continuing to shave generic runtime glue.
+Recent measurements also show that incremental Torch-side control-path cleanups now produce only marginal gains. The `leanpack` jump was meaningful because it changed the serving contract, not because it micro-tuned Python. That suggests the next material improvement must come from owning more of the decisive math kernels instead of continuing to shave generic runtime glue.
 
 Recent aggressive experiments also add a second conclusion:
 

@@ -9,6 +9,7 @@ MODEL_ID="${MODEL_ID:-Qwen/Qwen3-1.7B-Base}"
 MODEL_KEY="${MODEL_ID//\//__}"
 MODEL_PATH_FILE="${MODEL_PATH_FILE:-$REMOTE_HOME/models/$MODEL_KEY.path}"
 MODEL_PATH="${MODEL_PATH:-}"
+PACK_DIR="${PACK_DIR:-}"
 RUNTIME_MODE="${RUNTIME_MODE:-borrowed}"
 NUM_LAYERS="${NUM_LAYERS:-0}"
 PROMPT="${PROMPT:-Explain why fixing the model-chip contract simplifies inference software.}"
@@ -41,6 +42,7 @@ if [[ \"$THINKING_MODE\" == \"disable\" ]]; then EXTRA_ARGS=\"--disable-thinking
 if [[ \"$EXACT_PREFILL_BUCKET\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --exact-prefill-bucket\"; fi; \
 if [[ \"$IGNORE_EOS\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --ignore-eos\"; fi; \
 if [[ \"$SKIP_FINAL_CACHE_ADVANCE\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --skip-final-cache-advance\"; fi; \
+if [[ -n \"$PACK_DIR\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --pack-dir $PACK_DIR\"; fi; \
 if [[ \"$COMPILE\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --compile --compile-mode $COMPILE_MODE\"; fi; \
 python3 /home/pto/lean/repo/experiments/models/qwen_explicit_runtime_loop.py --model-path \"\$MODEL_REF\" --runtime-mode \"$RUNTIME_MODE\" --num-layers \"$NUM_LAYERS\" --device \"$DEVICE\" --prompt \"$PROMPT\" --prompt-format \"$PROMPT_FORMAT\" --max-prefill-tokens \"$MAX_PREFILL_TOKENS\" --max-new-tokens \"$MAX_NEW_TOKENS\" --page-size \"$PAGE_SIZE\" \$EXTRA_ARGS"
 

@@ -85,7 +85,7 @@ Confirmed on 2026-03-07:
 
 ## Whole-model benchmark status
 
-Date confirmed: 2026-03-07
+Date confirmed: 2026-03-09
 
 The active full-model benchmark path now runs against the exact `Qwen/Qwen3-1.7B-Base` BF16 snapshot stored under `/home/pto/lean/models/Qwen/Qwen3-1___7B-Base`.
 
@@ -127,6 +127,21 @@ Measured whole-model results so far:
   - `decode_loop_seconds ≈ 5.72`
   - `runtime_tokens_per_second ≈ 44.61`
   - `full_loop_tokens_per_second ≈ 44.46`
+- `leanpack`, remote artifact inventory:
+  - path: `/home/pto/lean/packed/Qwen__Qwen3-1.7B-Base`
+  - size on disk: about `3.8G`
+  - files: `30`
+  - tensors: `227`
+- `leanserve`, resident layout from the packed artifact:
+  - `resident_weights_bytes ≈ 4.06G`
+  - `max_kv_cache_bytes ≈ 124.8M`
+  - `resident_bytes ≈ 4.19G`
+- `leanstack`, full packed semantic runtime from `leanpack`, exact `decode_64_256`:
+  - `materialize_seconds ≈ 24.39`
+  - `prefill_seconds ≈ 0.020`
+  - `decode_loop_seconds ≈ 5.51`
+  - `runtime_tokens_per_second ≈ 46.25`
+  - `full_loop_tokens_per_second ≈ 46.09`
 - `UI smoke`, `max_new_tokens=16`:
   - `vLLM generated_tokens_per_second ≈ 10.56`
   - `leanstack runtime_tokens_per_second ≈ 14.64`
@@ -135,8 +150,8 @@ Interpretation:
 
 - the active specialized runtime is now real enough to run a full 28-layer model on the target GB10
 - the current `leanstack` path already beats the cold first-request framework path and a short `16-token` UI smoke
-- the current `leanstack` path no longer trails warmed `vLLM` by a wide margin; the gap on the main `decode_64_256` profile is now about `3.9%`
-- the next performance work should therefore focus on steady-state decode throughput, not just correctness or cold-start ownership
+- the checkpoint-driven semantic path no longer trails warmed `vLLM` by a wide margin, but the more important fact is that the packed `leanpack -> leanserve` path now narrowly clears the warmed `vLLM` number on the main exact-bucket `decode_64_256` profile
+- the packed path is therefore the new official serving path for performance work; future optimization should focus on widening that margin, not on re-optimizing the older checkpoint-driven runtime
 
 ## Stage 1 hot-kernel status
 

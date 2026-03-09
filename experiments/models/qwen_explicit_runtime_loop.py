@@ -9,6 +9,10 @@ import torch
 from transformers import AutoTokenizer
 
 from leanstack.prompt_bucket import build_exact_prompt_text
+from leanstack.leanserve import (
+    materialize_qwen_full_semantic_runtime_from_leanpack,
+    materialize_qwen_semantic_stack_from_leanpack,
+)
 from leanstack.runtime.qwen_explicit import (
     build_qwen_position_cache,
     materialize_qwen_full_runtime,
@@ -31,6 +35,7 @@ from leanstack.runtime.qwen_explicit import (
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run an explicit Qwen3 runtime loop on GPU.")
     parser.add_argument("--model-path", required=True)
+    parser.add_argument("--pack-dir", default="", help="Optional leanpack artifact directory for semantic runtime.")
     parser.add_argument("--runtime-mode", choices=("borrowed", "semantic"), default="borrowed")
     parser.add_argument("--benchmark-profile", default="")
     parser.add_argument("--num-layers", type=int, default=0, help="0 means the full model.")
@@ -130,6 +135,21 @@ def resolve_stop_token_ids(tokenizer, args: argparse.Namespace) -> tuple[int, ..
 
 def materialize_runtime(args: argparse.Namespace):
     if args.runtime_mode == "semantic":
+        if args.pack_dir:
+            if args.num_layers == 0:
+                return materialize_qwen_full_semantic_runtime_from_leanpack(
+                    args.pack_dir,
+                    device=args.device,
+                    dtype=args.dtype,
+                    include_output_head=True,
+                )
+            return materialize_qwen_semantic_stack_from_leanpack(
+                args.pack_dir,
+                layer_indices=tuple(range(args.num_layers)),
+                device=args.device,
+                dtype=args.dtype,
+                include_output_head=True,
+            )
         if args.num_layers == 0:
             return materialize_qwen_full_semantic_runtime(
                 model_path=args.model_path,

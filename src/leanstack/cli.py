@@ -35,6 +35,30 @@ def build_parser() -> argparse.ArgumentParser:
     leanserve.add_argument("--model", default="qwen")
     leanserve.set_defaults(handler=handle_show_leanserve_plan)
 
+    build_leanpack = subparsers.add_parser("build-leanpack", help="Build a serving-only packed artifact.")
+    build_leanpack.add_argument("--model", default="qwen")
+    build_leanpack.add_argument("--model-path", required=True)
+    build_leanpack.add_argument("--output-dir", type=Path, required=True)
+    build_leanpack.add_argument("--manifest-only", action="store_true")
+    build_leanpack.add_argument("--overwrite", action="store_true")
+    build_leanpack.set_defaults(handler=handle_build_leanpack)
+
+    inspect_leanpack = subparsers.add_parser("inspect-leanpack", help="Inspect a packed serving artifact.")
+    inspect_leanpack.add_argument("--pack-dir", type=Path, required=True)
+    inspect_leanpack.set_defaults(handler=handle_inspect_leanpack)
+
+    leanserve_layout = subparsers.add_parser(
+        "show-leanserve-layout",
+        help="Print the resident appliance layout for a packed artifact.",
+    )
+    leanserve_layout.add_argument("--model", default="qwen")
+    leanserve_layout.add_argument("--pack-dir", type=Path, required=True)
+    leanserve_layout.add_argument("--device", default="cuda:0")
+    leanserve_layout.add_argument("--dtype", default="")
+    leanserve_layout.add_argument("--page-size", type=int, default=16)
+    leanserve_layout.add_argument("--batch-size", type=int, default=1)
+    leanserve_layout.set_defaults(handler=handle_show_leanserve_layout)
+
     models = subparsers.add_parser("list-models", help="List supported adapter targets.")
     models.set_defaults(handler=handle_list_models)
 
@@ -100,6 +124,47 @@ def handle_show_leanpack_plan(args: argparse.Namespace) -> int:
 def handle_show_leanserve_plan(args: argparse.Namespace) -> int:
     spec = get_model_spec(args.model)
     print(render_leanserve_plan(spec))
+    return 0
+
+
+def handle_build_leanpack(args: argparse.Namespace) -> int:
+    from .pack import build_qwen_leanpack
+
+    spec = get_model_spec(args.model)
+    if spec.key != "qwen":
+        raise ValueError(f"leanpack builder not implemented for model={spec.key}")
+    manifest = build_qwen_leanpack(
+        model=spec,
+        model_path=args.model_path,
+        output_dir=args.output_dir,
+        overwrite=args.overwrite,
+        write_tensors=not args.manifest_only,
+    )
+    print(json.dumps(manifest.as_payload(), indent=2))
+    return 0
+
+
+def handle_inspect_leanpack(args: argparse.Namespace) -> int:
+    from .leanserve import load_leanpack_artifact
+
+    artifact = load_leanpack_artifact(args.pack_dir)
+    print(artifact.describe())
+    return 0
+
+
+def handle_show_leanserve_layout(args: argparse.Namespace) -> int:
+    from .leanserve import build_leanserve_appliance
+
+    spec = get_model_spec(args.model)
+    appliance = build_leanserve_appliance(
+        model=spec,
+        pack_dir=args.pack_dir,
+        device=args.device,
+        dtype=args.dtype or None,
+        page_size=args.page_size,
+        batch_size=args.batch_size,
+    )
+    print(appliance.render())
     return 0
 
 
