@@ -42,6 +42,12 @@ Profiles:
 - `decode_64_512`
 - `prefill_1024_64`
 
+Prompt-bucket rule:
+
+- every profile must use an exact prompt-token bucket, not just a `max_prefill_tokens` cap
+- result payloads must record both `target_prompt_tokens` and actual `prompt_tokens`
+- any run where these diverge is invalid for the main claim table
+
 Report:
 
 - cold TTFT
@@ -150,6 +156,11 @@ The first exact-checkpoint whole-model data point now exists for `Qwen/Qwen3-1.7
 - warmed `vLLM` on `decode_64_256`: about `46.40 generated tok/s`
 - current `leanstack` semantic full runtime on `decode_64_256`: about `44.61 runtime tok/s`
 
+After correcting the prompt contract to an exact `64-token` bucket on 2026-03-09:
+
+- warmed `vLLM` on `decode_64_256`: about `46.06 generated tok/s`, `prompt_tokens=64`
+- current `leanstack` semantic full runtime on `decode_64_256`: about `44.54 runtime tok/s`, `prompt_tokens=64`
+
 So the benchmark-first conclusion is no longer strongly negative, but it is still incomplete for the main steady-state decode target:
 
 - the specialized stack has not yet cleared the warmed-framework throughput bar
@@ -162,3 +173,17 @@ The current repo still has positive intermediate evidence:
 - the `16-token` UI smoke also favors `leanstack`
 
 But those are not the deciding metrics for the main claim. The deciding metric remains warmed full-model decode throughput.
+
+## Asymmetry Rule
+
+`leanstack` should not expect to win by rebuilding a generic runtime with fewer abstractions.
+
+It can only win by exploiting invariants that a compatibility-heavy framework cannot lean on as aggressively:
+
+- exact prompt-token buckets for the active claim profiles
+- one model, one chip, one precision policy, one resident process
+- offline-packed checkpoint layout for the exact decode kernels
+- static KV and scratch allocation for the exact request contract
+- cuTile-authored hot kernels that enter the real runtime, not only microbenchmarks
+
+If an optimization does not strengthen one of those asymmetries, it is unlikely to be enough.

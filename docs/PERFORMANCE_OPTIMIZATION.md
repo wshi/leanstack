@@ -26,6 +26,8 @@ Long-profile results on the remote GB10 machine:
 - after fused `QKV`, fused `gate/up`, sliced RoPE lookup, and compile-friendly decode math: about `44.55 tok/s`
 - after decode-only KV append/get fusion, fixed-length request loop tightening, and decode `SDPA -> o_proj` tightening: about `44.61 tok/s`
 - warmed `vLLM` baseline on the same profile: about `46.40 tok/s`
+- after enforcing an exact `64-token` prompt bucket for the official `decode_64_256` profile: about `44.54 tok/s`
+- warmed `vLLM` on the same exact-bucket profile: about `46.06 tok/s`
 
 Short interactive compare (`max_new_tokens=16`) now shows:
 
@@ -201,6 +203,13 @@ The first two are especially important because the current benchmark target is s
 
 Recent measurements also show that incremental Torch-side control-path cleanups now produce only marginal gains. That suggests the next material improvement must come from owning more of the decisive math kernels instead of continuing to shave generic runtime glue.
 
+Recent aggressive experiments also add a second conclusion:
+
+- `static KV` by itself is not enough
+- replacing only `lm_head + argmax` is not enough
+
+So the remaining path is not "more micro-cleanup." It is asymmetry-driven specialization.
+
 ## Next optimization order
 
 ### Priority 1. Logits and sampler path
@@ -226,6 +235,12 @@ Target:
 - move toward a more static decode step contract
 - reduce host-side orchestration per emitted token
 
+Concrete direction:
+
+- exact prompt-token buckets for the official profiles
+- resident service mode with preallocated buffers and graph-capture-friendly state
+- avoid measuring or optimizing against undersized prompt buckets that flatter control-path changes
+
 ### Priority 3. Hot-kernel lift into runtime
 
 Current state:
@@ -237,6 +252,11 @@ Target:
 
 - lift stable wins such as `RMSNorm`, then targeted GEMMs, into the real semantic runtime
 - keep the official backend path aligned with `cuTile -> TileIR -> cubin`
+
+Concrete direction:
+
+- offline-pack `QKV`, `gate/up`, `down_proj`, and `lm_head` into the exact layout consumed by the hot runtime
+- treat the on-disk checkpoint format as staging only, not the serving format
 
 ## Optimization rule
 

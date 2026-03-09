@@ -22,6 +22,7 @@ class BenchmarkProfile:
     goal: str
     prompt: str
     prompt_format: str
+    target_prompt_tokens: int
     max_prefill_tokens: int
     max_new_tokens: int
     concurrency: int
@@ -33,6 +34,7 @@ class BenchmarkProfile:
         lines = [f"{self.key}: {self.title}"]
         lines.append(f"  goal: {self.goal}")
         lines.append(f"  prompt_format: {self.prompt_format}")
+        lines.append(f"  target_prompt_tokens: {self.target_prompt_tokens}")
         lines.append(f"  max_prefill_tokens: {self.max_prefill_tokens}")
         lines.append(f"  max_new_tokens: {self.max_new_tokens}")
         lines.append(f"  concurrency: {self.concurrency}")
@@ -46,6 +48,7 @@ class BenchmarkProfile:
             "PROFILE_GOAL": self.goal,
             "PROMPT": self.prompt,
             "PROMPT_FORMAT": self.prompt_format,
+            "TARGET_PROMPT_TOKENS": str(self.target_prompt_tokens),
             "MAX_PREFILL_TOKENS": str(self.max_prefill_tokens),
             "MAX_NEW_TOKENS": str(self.max_new_tokens),
             "CONCURRENCY": str(self.concurrency),
@@ -60,6 +63,7 @@ BENCHMARK_PROFILES: dict[str, BenchmarkProfile] = {
         goal="Primary single-request decode-throughput profile for the fixed Qwen3-1.7B-Base contract.",
         prompt="Explain how a fixed Qwen3-1.7B-Base and GB10 contract can reduce inference overhead.",
         prompt_format="raw",
+        target_prompt_tokens=64,
         max_prefill_tokens=64,
         max_new_tokens=256,
         concurrency=1,
@@ -70,6 +74,7 @@ BENCHMARK_PROFILES: dict[str, BenchmarkProfile] = {
         goal="Stress the steady-state decode path with a longer emission window on one request.",
         prompt="Summarize why specialization can outperform compatibility when the model and hardware are fixed.",
         prompt_format="raw",
+        target_prompt_tokens=64,
         max_prefill_tokens=64,
         max_new_tokens=512,
         concurrency=1,
@@ -80,6 +85,7 @@ BENCHMARK_PROFILES: dict[str, BenchmarkProfile] = {
         goal="Expose prefill cost, staging overhead, and KV/cache setup behavior with a long prompt bucket.",
         prompt=_long_prefill_prompt(),
         prompt_format="raw",
+        target_prompt_tokens=1024,
         max_prefill_tokens=1024,
         max_new_tokens=64,
         concurrency=1,

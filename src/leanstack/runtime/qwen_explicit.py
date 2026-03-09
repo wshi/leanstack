@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -12,7 +13,7 @@ from transformers.cache_utils import DynamicCache
 from transformers.models.qwen3.configuration_qwen3 import Qwen3Config
 from transformers.models.qwen3.modeling_qwen3 import Qwen3DecoderLayer, Qwen3RMSNorm, Qwen3RotaryEmbedding
 
-from .kv_cache import KVBlockManager, KVPageLayout
+from .kv_cache import KVBlockManager, KVPageLayout, StaticKVBlockManager
 
 
 _HAS_RMS_NORM = hasattr(F, "rms_norm")
@@ -141,6 +142,13 @@ class QwenSemanticStackRuntime:
     lm_head_weight: torch.Tensor | None
     device: torch.device
     dtype: torch.dtype
+
+
+KVCacheManager = KVBlockManager | StaticKVBlockManager
+
+
+def resolve_semantic_logits_backend() -> str:
+    return os.environ.get("LEANSTACK_SEMANTIC_LOGITS_BACKEND", "auto").strip().lower()
 
 
 def resolve_torch_dtype(name: str) -> torch.dtype:
@@ -625,6 +633,14 @@ def qwen_rmsnorm(hidden_states: torch.Tensor, weight: torch.Tensor, eps: float) 
     return weight * normalized.to(input_dtype)
 
 
+def qwen_rmsnorm_vector(hidden_states: torch.Tensor, weight: torch.Tensor, eps: float) -> torch.Tensor:
+    return qwen_rmsnorm(hidden_states.view(1, -1), weight, eps).view(-1)
+
+
+def last_hidden_vector(hidden_states: torch.Tensor) -> torch.Tensor:
+    return hidden_states[:, -1, :].reshape(-1)
+
+
 def qwen_rotate_half(hidden_states: torch.Tensor) -> torch.Tensor:
     first_half = hidden_states[..., : hidden_states.shape[-1] // 2]
     second_half = hidden_states[..., hidden_states.shape[-1] // 2 :]
@@ -754,6 +770,42 @@ def _semantic_attention_qkv_eager(
     return qwen_apply_rotary_pos_emb(query_states, key_states, cos, sin) + (value_states,)
 
 
+def _semantic_attention_qkv_vector_eager(
+    hidden_states: torch.Tensor,
+    qkv_proj_weight: torch.Tensor,
+    q_proj_out_dim: int,
+    k_proj_out_dim: int,
+    num_attention_heads: int,
+    num_key_value_heads: int,
+    head_dim: int,
+    q_norm_weight: torch.Tensor,
+    k_norm_weight: torch.Tensor,
+    cos: torch.Tensor,
+    sin: torch.Tensor,
+    rms_norm_eps: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    qkv_states = torch.mv(qkv_proj_weight, hidden_states)
+    query_states, key_states, value_states = torch.split(
+        qkv_states,
+        (q_proj_out_dim, k_proj_out_dim, k_proj_out_dim),
+        dim=0,
+    )
+    query_states = F.rms_norm(
+        query_states.view(1, num_attention_heads, head_dim),
+        normalized_shape=(head_dim,),
+        weight=q_norm_weight,
+        eps=rms_norm_eps,
+    ).view(1, num_attention_heads, 1, head_dim)
+    key_states = F.rms_norm(
+        key_states.view(1, num_key_value_heads, head_dim),
+        normalized_shape=(head_dim,),
+        weight=k_norm_weight,
+        eps=rms_norm_eps,
+    ).view(1, num_key_value_heads, 1, head_dim)
+    value_states = value_states.view(1, num_key_value_heads, 1, head_dim)
+    return qwen_apply_rotary_pos_emb(query_states, key_states, cos, sin) + (value_states,)
+
+
 def _semantic_post_attention_mlp_eager(
     attention_output: torch.Tensor,
     residual: torch.Tensor,
@@ -831,6 +883,36 @@ def _semantic_decode_attention_output_eager(
     return F.linear(attention_output, o_proj_weight)
 
 
+def _semantic_decode_attention_output_vector_eager(
+    query_states: torch.Tensor,
+    key_states: torch.Tensor,
+    value_states: torch.Tensor,
+    o_proj_weight: torch.Tensor,
+    attention_scale: float,
+    num_key_value_groups: int,
+) -> torch.Tensor:
+    if num_key_value_groups > 1:
+        attention_output = F.scaled_dot_product_attention(
+            query_states,
+            key_states,
+            value_states,
+            dropout_p=0.0,
+            is_causal=False,
+            scale=attention_scale,
+            enable_gqa=True,
+        )
+    else:
+        attention_output = F.scaled_dot_product_attention(
+            query_states,
+            key_states,
+            value_states,
+            dropout_p=0.0,
+            is_causal=False,
+            scale=attention_scale,
+        )
+    return torch.mv(o_proj_weight, attention_output.reshape(-1))
+
+
 def _semantic_greedy_head_eager(
     hidden_states: torch.Tensor,
     final_norm_weight: torch.Tensor,
@@ -847,11 +929,46 @@ def _semantic_greedy_head_eager(
     return logits[:, -1, :].argmax(dim=-1, keepdim=True)
 
 
+def _semantic_mlp_epilogue_vector_eager(
+    hidden_states: torch.Tensor,
+    post_attention_layernorm_weight: torch.Tensor,
+    gate_up_proj_weight: torch.Tensor,
+    gate_proj_out_dim: int,
+    down_proj_weight: torch.Tensor,
+    rms_norm_eps: float,
+) -> torch.Tensor:
+    residual = hidden_states
+    hidden_states = qwen_rmsnorm_vector(hidden_states, post_attention_layernorm_weight, rms_norm_eps)
+    gate_up = torch.mv(gate_up_proj_weight, hidden_states)
+    gate_states, up_states = torch.split(
+        gate_up,
+        (gate_proj_out_dim, gate_up.shape[0] - gate_proj_out_dim),
+        dim=0,
+    )
+    hidden_states = torch.mv(down_proj_weight, F.silu(gate_states) * up_states)
+    return residual + hidden_states
+
+
+def _semantic_greedy_head_vector_eager(
+    hidden_states: torch.Tensor,
+    final_norm_weight: torch.Tensor,
+    lm_head_weight: torch.Tensor,
+    rms_norm_eps: float,
+) -> torch.LongTensor:
+    hidden_states = qwen_rmsnorm_vector(hidden_states, final_norm_weight, rms_norm_eps)
+    logits = torch.mv(lm_head_weight, hidden_states)
+    return logits.argmax(dim=0, keepdim=True).view(1, 1)
+
+
 _semantic_attention_qkv = _compile_reduce_overhead(_semantic_attention_qkv_eager)
 _semantic_post_attention_mlp = _compile_reduce_overhead(_semantic_post_attention_mlp_eager)
 _semantic_mlp_epilogue = _compile_reduce_overhead(_semantic_mlp_epilogue_eager)
 _semantic_decode_attention_output = _compile_reduce_overhead(_semantic_decode_attention_output_eager)
 _semantic_greedy_head = _compile_reduce_overhead(_semantic_greedy_head_eager)
+_semantic_attention_qkv_vector = _compile_reduce_overhead(_semantic_attention_qkv_vector_eager)
+_semantic_decode_attention_output_vector = _compile_reduce_overhead(_semantic_decode_attention_output_vector_eager)
+_semantic_mlp_epilogue_vector = _compile_reduce_overhead(_semantic_mlp_epilogue_vector_eager)
+_semantic_greedy_head_vector = _compile_reduce_overhead(_semantic_greedy_head_vector_eager)
 
 
 def qwen_repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -953,7 +1070,8 @@ def build_qwen_kv_cache(
     dtype: torch.dtype,
     page_size: int = 16,
     batch_size: int = 1,
-) -> KVBlockManager:
+    cache_kind: str = "auto",
+) -> KVCacheManager:
     head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
     layout = KVPageLayout(
         num_layers=config.num_hidden_layers,
@@ -965,6 +1083,10 @@ def build_qwen_kv_cache(
         dtype=dtype,
         device=device,
     )
+    if cache_kind not in {"auto", "paged", "static"}:
+        raise ValueError(f"unsupported cache_kind: {cache_kind}")
+    if cache_kind == "static" or (cache_kind == "auto" and batch_size == 1):
+        return StaticKVBlockManager(layout)
     return KVBlockManager(layout)
 
 
@@ -976,7 +1098,7 @@ def _semantic_qwen_attention_forward(
     hidden_states: torch.Tensor,
     position_ids: torch.LongTensor | None,
     attention_mask: torch.Tensor | None,
-    kv_cache: KVBlockManager | None = None,
+    kv_cache: KVCacheManager | None = None,
     position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None,
 ) -> torch.Tensor:
     head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
@@ -1025,13 +1147,13 @@ def _semantic_qwen_attention_forward(
 def _semantic_qwen_attention_decode_forward(
     attention: QwenSemanticAttentionRuntime,
     hidden_states: torch.Tensor,
-    kv_cache: KVBlockManager,
+    kv_cache: KVCacheManager,
     position_embeddings: tuple[torch.Tensor, torch.Tensor],
     rms_norm_eps: float,
 ) -> torch.Tensor:
     cos, sin = position_embeddings
-    query_states, key_states, value_states = _semantic_attention_qkv(
-        hidden_states,
+    query_states, key_states, value_states = _semantic_attention_qkv_vector(
+        hidden_states.reshape(-1),
         attention.qkv_proj_weight,
         attention.q_proj_out_dim,
         attention.k_proj_out_dim,
@@ -1045,7 +1167,7 @@ def _semantic_qwen_attention_decode_forward(
         rms_norm_eps,
     )
     key_states, value_states = kv_cache.append_and_get(attention.layer_idx, key_states, value_states)
-    return _semantic_decode_attention_output(
+    return _semantic_decode_attention_output_vector(
         query_states,
         key_states,
         value_states,
@@ -1060,7 +1182,7 @@ def semantic_qwen_attention_forward(
     hidden_states: torch.Tensor,
     position_ids: torch.LongTensor | None,
     attention_mask: torch.Tensor | None,
-    kv_cache: KVBlockManager | None = None,
+    kv_cache: KVCacheManager | None = None,
     position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None,
 ) -> torch.Tensor:
     return _semantic_qwen_attention_forward(
@@ -1094,7 +1216,7 @@ def semantic_qwen_layer_forward(
     hidden_states: torch.Tensor,
     position_ids: torch.LongTensor | None,
     attention_mask: torch.Tensor | None,
-    kv_cache: KVBlockManager | None = None,
+    kv_cache: KVCacheManager | None = None,
     position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None,
 ) -> torch.Tensor:
     residual = hidden_states
@@ -1125,12 +1247,12 @@ def semantic_qwen_layer_forward(
 def semantic_qwen_decode_layer_forward(
     layer: QwenSemanticLayerRuntime,
     hidden_states: torch.Tensor,
-    kv_cache: KVBlockManager,
+    kv_cache: KVCacheManager,
     position_embeddings: tuple[torch.Tensor, torch.Tensor],
     rms_norm_eps: float,
 ) -> torch.Tensor:
-    residual = hidden_states
-    hidden_states = qwen_rmsnorm(hidden_states, layer.input_layernorm_weight, rms_norm_eps)
+    residual = hidden_states.reshape(-1)
+    hidden_states = qwen_rmsnorm_vector(residual, layer.input_layernorm_weight, rms_norm_eps).view(1, 1, -1)
     attention_output = _semantic_qwen_attention_decode_forward(
         layer.attention,
         hidden_states,
@@ -1139,7 +1261,7 @@ def semantic_qwen_decode_layer_forward(
         rms_norm_eps,
     )
     hidden_states = residual + attention_output
-    return _semantic_mlp_epilogue(
+    hidden_states = _semantic_mlp_epilogue_vector(
         hidden_states,
         layer.post_attention_layernorm_weight,
         layer.mlp.gate_up_proj_weight,
@@ -1147,6 +1269,7 @@ def semantic_qwen_decode_layer_forward(
         layer.mlp.down_proj_weight,
         rms_norm_eps,
     )
+    return hidden_states.view(1, 1, -1)
 
 
 def run_semantic_qwen_block(
@@ -1154,7 +1277,7 @@ def run_semantic_qwen_block(
     hidden_states: torch.Tensor,
     position_ids: torch.LongTensor | None,
     attention_mask: torch.Tensor | None,
-    kv_cache: KVBlockManager | None = None,
+    kv_cache: KVCacheManager | None = None,
     position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None,
 ) -> torch.Tensor:
     residual = hidden_states
@@ -1292,7 +1415,7 @@ def run_semantic_single_layer_prefill(
     page_size: int = 16,
     max_seq_len: int | None = None,
     position_cache: tuple[torch.Tensor, torch.Tensor] | None = None,
-) -> tuple[torch.Tensor, KVBlockManager]:
+) -> tuple[torch.Tensor, KVCacheManager]:
     input_ids = input_ids.to(runtime.device)
     hidden_states = F.embedding(input_ids, runtime.embed_tokens_weight)
     seq_len = hidden_states.shape[1]
@@ -1327,7 +1450,7 @@ def run_semantic_stack_prefill(
     page_size: int = 16,
     max_seq_len: int | None = None,
     position_cache: tuple[torch.Tensor, torch.Tensor] | None = None,
-) -> tuple[torch.Tensor, KVBlockManager]:
+) -> tuple[torch.Tensor, KVCacheManager]:
     input_ids = input_ids.to(runtime.device)
     hidden_states = F.embedding(input_ids, runtime.embed_tokens_weight)
     seq_len = hidden_states.shape[1]
@@ -1414,9 +1537,9 @@ def run_single_layer_decode(
 def run_semantic_single_layer_decode(
     runtime: QwenSemanticBlockRuntime,
     input_ids: torch.LongTensor,
-    kv_cache: KVBlockManager,
+    kv_cache: KVCacheManager,
     position_cache: tuple[torch.Tensor, torch.Tensor] | None = None,
-) -> tuple[torch.Tensor, KVBlockManager]:
+) -> tuple[torch.Tensor, KVCacheManager]:
     input_ids = input_ids.to(runtime.device)
     hidden_states = F.embedding(input_ids, runtime.embed_tokens_weight)
     query_len = hidden_states.shape[1]
@@ -1448,9 +1571,9 @@ def run_semantic_single_layer_decode(
 def run_semantic_stack_decode(
     runtime: QwenSemanticStackRuntime,
     input_ids: torch.LongTensor,
-    kv_cache: KVBlockManager,
+    kv_cache: KVCacheManager,
     position_cache: tuple[torch.Tensor, torch.Tensor] | None = None,
-) -> tuple[torch.Tensor, KVBlockManager]:
+) -> tuple[torch.Tensor, KVCacheManager]:
     input_ids = input_ids.to(runtime.device)
     hidden_states = F.embedding(input_ids, runtime.embed_tokens_weight)
     query_len = hidden_states.shape[1]
@@ -1515,8 +1638,25 @@ def project_semantic_hidden_to_logits(
 ) -> torch.Tensor:
     if runtime.final_norm_weight is None or runtime.lm_head_weight is None:
         raise ValueError("runtime does not include model.norm and lm_head")
-    hidden_states = qwen_rmsnorm(hidden_states, runtime.final_norm_weight, runtime.config.rms_norm_eps)
-    return F.linear(hidden_states[:, -1:, :], runtime.lm_head_weight)
+    last_hidden = last_hidden_vector(hidden_states)
+    last_hidden = qwen_rmsnorm_vector(last_hidden, runtime.final_norm_weight, runtime.config.rms_norm_eps)
+    return torch.mv(runtime.lm_head_weight, last_hidden).view(1, 1, -1)
+
+
+def select_semantic_greedy_token_cutile(
+    runtime: QwenSemanticStackRuntime,
+    hidden_states: torch.Tensor,
+) -> torch.LongTensor:
+    if runtime.final_norm_weight is None or runtime.lm_head_weight is None:
+        raise ValueError("runtime does not include model.norm and lm_head")
+    last_hidden = last_hidden_vector(hidden_states)
+    normalized_hidden = qwen_rmsnorm_vector(last_hidden, runtime.final_norm_weight, runtime.config.rms_norm_eps)
+    try:
+        from .cutile_logits import cutile_logits_argmax
+    except ImportError:
+        logits = torch.mv(runtime.lm_head_weight, normalized_hidden)
+        return logits.argmax(dim=0, keepdim=True).view(1, 1)
+    return cutile_logits_argmax(normalized_hidden, runtime.lm_head_weight)
 
 
 def select_semantic_greedy_token(
@@ -1525,8 +1665,15 @@ def select_semantic_greedy_token(
 ) -> torch.LongTensor:
     if runtime.final_norm_weight is None or runtime.lm_head_weight is None:
         raise ValueError("runtime does not include model.norm and lm_head")
-    return _semantic_greedy_head(
-        hidden_states,
+    backend = resolve_semantic_logits_backend()
+    if backend in {"auto", "cutile"} and hidden_states.device.type == "cuda":
+        try:
+            return select_semantic_greedy_token_cutile(runtime, hidden_states)
+        except Exception:
+            if backend == "cutile":
+                raise
+    return _semantic_greedy_head_vector(
+        last_hidden_vector(hidden_states),
         runtime.final_norm_weight,
         runtime.lm_head_weight,
         runtime.config.rms_norm_eps,

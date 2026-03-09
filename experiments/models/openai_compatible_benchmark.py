@@ -8,6 +8,10 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from transformers import AutoTokenizer
+
+from leanstack.prompt_bucket import build_exact_prompt_text
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Benchmark an OpenAI-compatible completion endpoint.")
@@ -17,6 +21,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--variant", default="openai")
     parser.add_argument("--benchmark-profile", default="")
     parser.add_argument("--prompt", required=True)
+    parser.add_argument("--tokenizer-model-path", default="")
+    parser.add_argument("--exact-prompt-tokens", type=int, default=0)
     parser.add_argument("--max-new-tokens", type=int, default=32)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--api-key", default="EMPTY")
@@ -150,13 +156,24 @@ def resolve_usage(
     return non_stream_result.get("usage")
 
 
+def resolve_prompt(args: argparse.Namespace) -> tuple[str, int | None]:
+    if args.exact_prompt_tokens <= 0:
+        return args.prompt, None
+    if not args.tokenizer_model_path:
+        raise ValueError("--tokenizer-model-path is required when --exact-prompt-tokens is set")
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_model_path, trust_remote_code=True)
+    exact_prompt, exact_tokens = build_exact_prompt_text(tokenizer, args.prompt, args.exact_prompt_tokens)
+    return exact_prompt, exact_tokens
+
+
 def main() -> int:
     args = parse_args()
+    prompt, target_prompt_tokens = resolve_prompt(args)
     try:
         stream_result = run_streaming_completion(
             base_url=args.base_url,
             model=args.model,
-            prompt=args.prompt,
+            prompt=prompt,
             max_new_tokens=args.max_new_tokens,
             temperature=args.temperature,
             api_key=args.api_key,
@@ -165,7 +182,7 @@ def main() -> int:
         non_stream_result = run_non_streaming_completion(
             base_url=args.base_url,
             model=args.model,
-            prompt=args.prompt,
+            prompt=prompt,
             max_new_tokens=args.max_new_tokens,
             temperature=args.temperature,
             api_key=args.api_key,
@@ -186,7 +203,8 @@ def main() -> int:
         "benchmark_profile": args.benchmark_profile or None,
         "base_url": _normalize_base_url(args.base_url),
         "model": args.model,
-        "prompt": args.prompt,
+        "prompt": prompt,
+        "target_prompt_tokens": target_prompt_tokens,
         "prompt_tokens": prompt_tokens,
         "generated_tokens": completion_tokens,
         "ttft_seconds": stream_result["ttft_seconds"],

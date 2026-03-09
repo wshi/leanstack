@@ -8,6 +8,7 @@ from pathlib import Path
 import torch
 from transformers import AutoTokenizer
 
+from leanstack.prompt_bucket import build_exact_prompt_text
 from leanstack.runtime.qwen_explicit import (
     build_qwen_position_cache,
     materialize_qwen_full_runtime,
@@ -16,6 +17,7 @@ from leanstack.runtime.qwen_explicit import (
     materialize_qwen_semantic_stack_runtime,
     normalize_stop_token_ids,
     project_hidden_to_logits,
+    resolve_semantic_logits_backend,
     run_semantic_stack_decode,
     run_semantic_stack_prefill,
     run_stack_decode,
@@ -36,6 +38,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dtype", choices=("bfloat16", "float16", "float32"), default="bfloat16")
     parser.add_argument("--prompt", default="Explain why fixing the model-chip contract simplifies inference software.")
     parser.add_argument("--prompt-format", choices=("auto", "chat", "raw"), default="chat")
+    parser.add_argument("--exact-prefill-bucket", action="store_true")
     parser.add_argument("--max-prefill-tokens", type=int, default=16)
     parser.add_argument("--max-new-tokens", type=int, default=8)
     parser.add_argument("--page-size", type=int, default=16)
@@ -83,6 +86,18 @@ def build_prompt(tokenizer, args: argparse.Namespace, thinking_mode: bool | None
     except TypeError:
         template_kwargs.pop("enable_thinking", None)
         return tokenizer.apply_chat_template(messages, **template_kwargs), "chat"
+
+
+def build_prompt_input_ids(tokenizer, prompt_text: str, args: argparse.Namespace) -> tuple[torch.LongTensor, str, int | None]:
+    exact_prompt_text = prompt_text
+    target_prompt_tokens: int | None = None
+    if args.exact_prefill_bucket:
+        target_prompt_tokens = args.max_prefill_tokens
+        exact_prompt_text, _ = build_exact_prompt_text(tokenizer, prompt_text, target_prompt_tokens)
+    input_ids = tokenizer(exact_prompt_text, return_tensors="pt", add_special_tokens=False)["input_ids"][
+        :, : args.max_prefill_tokens
+    ]
+    return input_ids, exact_prompt_text, target_prompt_tokens
 
 
 def sync_device(device: torch.device) -> None:
@@ -366,7 +381,7 @@ def main() -> int:
     thinking_mode = resolve_thinking_mode(args)
     tokenizer = AutoTokenizer.from_pretrained(args.model_path, trust_remote_code=True)
     formatted_prompt, resolved_prompt_format = build_prompt(tokenizer, args, thinking_mode)
-    input_ids = tokenizer(formatted_prompt, return_tensors="pt")["input_ids"][:, : args.max_prefill_tokens]
+    input_ids, exact_prompt_text, target_prompt_tokens = build_prompt_input_ids(tokenizer, formatted_prompt, args)
     stop_token_ids = resolve_stop_token_ids(tokenizer, args)
 
     timings: dict[str, float] = {}
@@ -428,6 +443,7 @@ def main() -> int:
         "num_layers": len(runtime.layer_indices),
         "layer_range": [runtime.layer_indices[0], runtime.layer_indices[-1]] if runtime.layer_indices else [],
         "runtime_mode": args.runtime_mode,
+        "semantic_logits_backend": resolve_semantic_logits_backend() if args.runtime_mode == "semantic" else None,
         "benchmark_profile": args.benchmark_profile or None,
         "device": args.device,
         "dtype": args.dtype,
@@ -436,9 +452,12 @@ def main() -> int:
         "compile_mode": args.compile_mode if args.compile else None,
         "attn_implementation": runtime.config._attn_implementation,
         "prompt_format": resolved_prompt_format,
+        "exact_prefill_bucket": bool(args.exact_prefill_bucket),
+        "target_prompt_tokens": target_prompt_tokens,
         "thinking_mode": (
             "enabled" if thinking_mode is True else "disabled" if thinking_mode is False else "default"
         ),
+        "prompt_text": exact_prompt_text,
         "prompt_tokens": int(input_ids.shape[-1]),
         "max_new_tokens": args.max_new_tokens,
         "resident_requests": args.resident_requests,

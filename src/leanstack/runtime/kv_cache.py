@@ -181,9 +181,88 @@ class KVBlockManager:
     def summary(self) -> dict[str, int]:
         seq_len = self.get_seq_length()
         return {
+            "cache_kind": "paged",
             "page_size": self.layout.page_size,
             "num_pages": self.layout.num_pages,
             "used_pages": self.layout.pages_for_tokens(seq_len),
             "allocated_pages": max(self.layer_page_counts, default=0),
+            "seq_len": seq_len,
+        }
+
+
+class StaticKVBlockManager:
+    def __init__(self, layout: KVPageLayout):
+        self.layout = layout
+        shape = (
+            layout.num_layers,
+            layout.batch_size,
+            layout.num_key_value_heads,
+            layout.max_seq_len,
+            layout.head_dim,
+        )
+        self.key_cache = torch.zeros(shape, device=layout.device, dtype=layout.dtype)
+        self.value_cache = torch.zeros(shape, device=layout.device, dtype=layout.dtype)
+        self.layer_seq_lens = [0 for _ in range(layout.num_layers)]
+        self.max_layer_seq_len = 0
+
+    def append(self, layer_idx: int, key_states: torch.Tensor, value_states: torch.Tensor) -> None:
+        if key_states.shape != value_states.shape:
+            raise ValueError("key/value states must have the same shape")
+
+        batch_size, num_heads, token_count, head_dim = key_states.shape
+        if batch_size != self.layout.batch_size:
+            raise ValueError(f"expected batch_size={self.layout.batch_size}, got {batch_size}")
+        if num_heads != self.layout.num_key_value_heads:
+            raise ValueError(f"expected num_key_value_heads={self.layout.num_key_value_heads}, got {num_heads}")
+        if head_dim != self.layout.head_dim:
+            raise ValueError(f"expected head_dim={self.layout.head_dim}, got {head_dim}")
+
+        start = self.layer_seq_lens[layer_idx]
+        end = start + token_count
+        if end > self.layout.max_seq_len:
+            raise ValueError(
+                f"cache overflow for layer {layer_idx}: requested {end} tokens with max_seq_len={self.layout.max_seq_len}"
+            )
+
+        target_slice = slice(start, end)
+        self.key_cache[layer_idx, :, :, target_slice, :].copy_(key_states)
+        self.value_cache[layer_idx, :, :, target_slice, :].copy_(value_states)
+        self.layer_seq_lens[layer_idx] = end
+        self.max_layer_seq_len = max(self.max_layer_seq_len, end)
+
+    def append_and_get(
+        self,
+        layer_idx: int,
+        key_states: torch.Tensor,
+        value_states: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        self.append(layer_idx, key_states, value_states)
+        return self.get(layer_idx)
+
+    def get(self, layer_idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        seq_len = self.layer_seq_lens[layer_idx]
+        return (
+            self.key_cache[layer_idx, :, :, :seq_len, :],
+            self.value_cache[layer_idx, :, :, :seq_len, :],
+        )
+
+    def get_layer_seq_length(self, layer_idx: int) -> int:
+        return self.layer_seq_lens[layer_idx]
+
+    def get_seq_length(self) -> int:
+        return self.max_layer_seq_len
+
+    def page_table(self, layer_idx: int) -> tuple[int, ...]:
+        page_count = self.layout.pages_for_tokens(self.get_layer_seq_length(layer_idx))
+        return tuple(range(page_count))
+
+    def summary(self) -> dict[str, int]:
+        seq_len = self.get_seq_length()
+        return {
+            "cache_kind": "static",
+            "page_size": self.layout.page_size,
+            "num_pages": self.layout.num_pages,
+            "used_pages": self.layout.pages_for_tokens(seq_len),
+            "allocated_pages": self.layout.pages_for_tokens(seq_len),
             "seq_len": seq_len,
         }

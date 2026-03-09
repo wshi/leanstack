@@ -25,6 +25,7 @@ WARMUP_REQUESTS="${WARMUP_REQUESTS:-1}"
 IGNORE_EOS="${IGNORE_EOS:-1}"
 COMPILE="${COMPILE:-0}"
 COMPILE_MODE="${COMPILE_MODE:-default}"
+SEMANTIC_LOGITS_BACKEND="${SEMANTIC_LOGITS_BACKEND:-auto}"
 SKIP_REMOTE_SYNC="${SKIP_REMOTE_SYNC:-0}"
 source "$ROOT/scripts/remote_helpers.sh"
 
@@ -36,6 +37,7 @@ load_remote_cmd "$REMOTE_SCRIPT"
 COMMAND="set -euo pipefail; \
 source /home/pto/venv-cutile/bin/activate; \
 export PYTHONPATH=/home/pto/lean/repo/src; \
+export LEANSTACK_SEMANTIC_LOGITS_BACKEND=\"$SEMANTIC_LOGITS_BACKEND\"; \
 MODEL_REF=\"$MODEL_PATH\"; \
 if [[ -z \"\$MODEL_REF\" ]]; then MODEL_REF=\$(<\"$MODEL_PATH_FILE\"); fi; \
 eval \"\$(python3 -m leanstack.cli show-benchmark-profile --profile \"$PROFILE\" --format shell)\"; \
@@ -48,6 +50,7 @@ if [[ -z \"$BENCHMARK_TAG\" ]]; then BENCHMARK_TAG=\$(date -u +%Y%m%dT%H%M%SZ); 
 OUTPUT_PATH=\"$RESULT_DIR/leanstack_${RUNTIME_MODE}_${PROFILE}_\${BENCHMARK_TAG}.json\"; \
 EXTRA_ARGS=\"\"; \
 if [[ \"$IGNORE_EOS\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --ignore-eos\"; fi; \
+EXTRA_ARGS=\"\$EXTRA_ARGS --exact-prefill-bucket\"; \
 if [[ \"$COMPILE\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --compile --compile-mode $COMPILE_MODE\"; fi; \
 python3 /home/pto/lean/repo/experiments/models/qwen_explicit_runtime_loop.py \
   --model-path \"\$MODEL_REF\" \
