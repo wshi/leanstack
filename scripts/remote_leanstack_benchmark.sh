@@ -24,6 +24,9 @@ MAX_NEW_TOKENS_OVERRIDE="${MAX_NEW_TOKENS_OVERRIDE:-}"
 RESIDENT_REQUESTS="${RESIDENT_REQUESTS:-3}"
 WARMUP_REQUESTS="${WARMUP_REQUESTS:-1}"
 IGNORE_EOS="${IGNORE_EOS:-1}"
+SPECULATIVE="${SPECULATIVE:-0}"
+DRAFT_LAYER_COUNT="${DRAFT_LAYER_COUNT:-12}"
+PROPOSAL_LEN="${PROPOSAL_LEN:-4}"
 COMPILE="${COMPILE:-0}"
 COMPILE_MODE="${COMPILE_MODE:-default}"
 SEMANTIC_LOGITS_BACKEND="${SEMANTIC_LOGITS_BACKEND:-auto}"
@@ -53,6 +56,7 @@ EXTRA_ARGS=\"\"; \
 if [[ \"$IGNORE_EOS\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --ignore-eos\"; fi; \
 EXTRA_ARGS=\"\$EXTRA_ARGS --exact-prefill-bucket\"; \
 if [[ -n \"$PACK_DIR\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --pack-dir $PACK_DIR\"; fi; \
+if [[ \"$SPECULATIVE\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --speculative --draft-layer-count $DRAFT_LAYER_COUNT --proposal-len $PROPOSAL_LEN\"; fi; \
 if [[ \"$COMPILE\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --compile --compile-mode $COMPILE_MODE\"; fi; \
 python3 /home/pto/lean/repo/experiments/models/qwen_explicit_runtime_loop.py \
   --model-path \"\$MODEL_REF\" \

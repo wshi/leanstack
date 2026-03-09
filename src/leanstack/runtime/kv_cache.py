@@ -34,6 +34,14 @@ class KVPageLayout:
         return (token_count + self.page_size - 1) // self.page_size
 
 
+@dataclass
+class StaticKVCacheSnapshot:
+    key_cache: torch.Tensor
+    value_cache: torch.Tensor
+    layer_seq_lens: list[int]
+    max_layer_seq_len: int
+
+
 class KVBlockManager:
     def __init__(self, layout: KVPageLayout):
         self.layout = layout
@@ -266,3 +274,17 @@ class StaticKVBlockManager:
             "allocated_pages": self.layout.pages_for_tokens(seq_len),
             "seq_len": seq_len,
         }
+
+    def snapshot_state(self) -> StaticKVCacheSnapshot:
+        return StaticKVCacheSnapshot(
+            key_cache=self.key_cache.clone(),
+            value_cache=self.value_cache.clone(),
+            layer_seq_lens=list(self.layer_seq_lens),
+            max_layer_seq_len=int(self.max_layer_seq_len),
+        )
+
+    def restore_state(self, snapshot: StaticKVCacheSnapshot) -> None:
+        self.key_cache.copy_(snapshot.key_cache)
+        self.value_cache.copy_(snapshot.value_cache)
+        self.layer_seq_lens = list(snapshot.layer_seq_lens)
+        self.max_layer_seq_len = int(snapshot.max_layer_seq_len)

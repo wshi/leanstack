@@ -63,6 +63,13 @@ class BucketEntry:
 
 
 @dataclass(frozen=True)
+class SpeculativeModeEntry:
+    key: str
+    draft_layer_count: int
+    proposal_len: int
+
+
+@dataclass(frozen=True)
 class PackedArtifactManifest:
     format_version: str
     created_at_utc: str
@@ -75,6 +82,7 @@ class PackedArtifactManifest:
     model_hparams: dict[str, Any]
     exact_prompt_buckets: list[int]
     buckets: list[BucketEntry]
+    speculative_modes: list[SpeculativeModeEntry]
     required_kernels: list[str]
     backend_policy: list[str]
     files: list[PackedFileEntry]
@@ -93,6 +101,7 @@ class PackedArtifactManifest:
             "model_hparams": self.model_hparams,
             "exact_prompt_buckets": self.exact_prompt_buckets,
             "buckets": [asdict(bucket) for bucket in self.buckets],
+            "speculative_modes": [asdict(mode) for mode in self.speculative_modes],
             "required_kernels": self.required_kernels,
             "backend_policy": self.backend_policy,
             "files": [asdict(file_entry) for file_entry in self.files],
@@ -113,6 +122,9 @@ class PackedArtifactManifest:
             model_hparams=dict(payload.get("model_hparams", {})),
             exact_prompt_buckets=[int(bucket) for bucket in payload.get("exact_prompt_buckets", [])],
             buckets=[BucketEntry(**bucket) for bucket in payload.get("buckets", [])],
+            speculative_modes=[
+                SpeculativeModeEntry(**mode) for mode in payload.get("speculative_modes", [])
+            ],
             required_kernels=list(payload.get("required_kernels", [])),
             backend_policy=list(payload.get("backend_policy", [])),
             files=[PackedFileEntry(**file_entry) for file_entry in payload.get("files", [])],
@@ -141,6 +153,23 @@ def _qwen_bucket_entries(model: ModelSpec) -> list[BucketEntry]:
             )
         )
     return buckets
+
+
+def _qwen_speculative_modes(model: ModelSpec) -> list[SpeculativeModeEntry]:
+    total_layers = int(model.num_hidden_layers or 0)
+    default_draft = min(12, max(total_layers - 1, 1))
+    return [
+        SpeculativeModeEntry(
+            key="draft12_k4",
+            draft_layer_count=default_draft,
+            proposal_len=4,
+        ),
+        SpeculativeModeEntry(
+            key="draft12_k2",
+            draft_layer_count=default_draft,
+            proposal_len=2,
+        ),
+    ]
 
 
 def _record_tensor_entries(file_name: str, tensors: dict[str, torch.Tensor], roles: dict[str, str], sources: dict[str, list[str]]) -> tuple[list[PackedTensorEntry], int]:
@@ -320,6 +349,7 @@ def build_qwen_leanpack(
         },
         exact_prompt_buckets=list(model.exact_prompt_buckets),
         buckets=_qwen_bucket_entries(model),
+        speculative_modes=_qwen_speculative_modes(model),
         required_kernels=list(model.required_kernels),
         backend_policy=list(model.backend_policy),
         files=files,

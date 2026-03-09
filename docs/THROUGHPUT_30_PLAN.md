@@ -79,6 +79,49 @@ That means:
 
 This is the only currently credible route to a `30%+` throughput jump while preserving exact semantics.
 
+## First implementation result
+
+Date confirmed: 2026-03-09
+
+The repo now has a first executable exact self-speculative loop:
+
+- one packed artifact
+- one draft runtime
+- one verifier runtime
+- proposal / verify / commit accounting
+
+The current implementation uses a simple early-exit draft:
+
+- the draft proposes tokens from a prefix of the base model using the shared final norm and tied output head
+- the verifier runs the remaining layers exactly
+
+This means the first implementation is valid as an appliance experiment, but it is still a weak draft model.
+
+Initial smoke results on a short `16-token` decode:
+
+- `draft=12`, `k=4`:
+  - acceptance ratio: about `3.7%`
+  - committed tokens per cycle: about `1.07`
+- `draft=20`, `k=2`:
+  - acceptance ratio: about `22.7%`
+  - committed tokens per cycle: about `1.45`
+- `draft=24`, `k=2`:
+  - acceptance ratio: about `36.8%`
+  - committed tokens per cycle: about `1.60`
+
+Interpretation:
+
+- the loop works
+- the current untrained early-exit draft is too weak to justify a `30%` target
+- deeper drafts help, but not enough yet
+
+So the next speculative work is not "optimize this exact draft harder."
+
+It is:
+
+- improve draft quality without losing the one-model appliance thesis
+- or accept that a stronger draft path is required than simple shared-head early exit
+
 ## Official strategy
 
 The project should now split into two coupled tracks.
@@ -145,6 +188,16 @@ Why this matches the repo thesis:
 - agent-generated code specialized to one model and one machine
 
 This is a better fit than introducing a generic draft-model stack.
+
+But the first smoke data now adds a constraint:
+
+- simple prefix-layer early exit plus the shared final head is probably not enough
+
+So the next design candidates should be:
+
+- a trained or distilled early-exit head for the draft path
+- a tiny auxiliary draft head packed into `leanpack`
+- or a second packed draft artifact that remains fixed to the same Qwen/GB10 appliance contract
 
 ## Leanpack v1.5 requirements
 

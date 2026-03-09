@@ -215,6 +215,14 @@ class LeanPackArtifact:
             lines.append(
                 "exact_prompt_buckets: " + ", ".join(str(bucket) for bucket in self.manifest.exact_prompt_buckets)
             )
+        if self.manifest.speculative_modes:
+            lines.append(
+                "speculative_modes: "
+                + ", ".join(
+                    f"{mode.key}(layers={mode.draft_layer_count},k={mode.proposal_len})"
+                    for mode in self.manifest.speculative_modes
+                )
+            )
         lines.append(f"files: {len(self.manifest.files)}")
         lines.append(f"tensors: {len(self.manifest.tensors)}")
         return "\n".join(lines)
@@ -252,6 +260,12 @@ class LeanServeAppliance:
                 f"max_seq={bucket.max_seq_len}, kv_tokens={bucket.kv_tokens_capacity}, "
                 f"kv_cache_bytes={bucket.kv_cache_bytes}"
             )
+        if self.artifact.manifest.speculative_modes:
+            lines.append("Speculative modes:")
+            for mode in self.artifact.manifest.speculative_modes:
+                lines.append(
+                    f"- {mode.key}: draft_layers={mode.draft_layer_count}, proposal_len={mode.proposal_len}"
+                )
         return "\n".join(lines)
 
 

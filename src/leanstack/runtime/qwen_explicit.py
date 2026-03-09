@@ -1483,6 +1483,44 @@ def run_semantic_stack_prefill(
     return hidden_states, kv_cache
 
 
+def run_semantic_stack_prefill_from_hidden(
+    runtime: QwenSemanticStackRuntime,
+    hidden_states: torch.Tensor,
+    page_size: int = 16,
+    max_seq_len: int | None = None,
+    position_cache: tuple[torch.Tensor, torch.Tensor] | None = None,
+) -> tuple[torch.Tensor, KVCacheManager]:
+    hidden_states = hidden_states.to(runtime.device, dtype=runtime.dtype)
+    seq_len = hidden_states.shape[1]
+    kv_cache = build_qwen_kv_cache(
+        runtime.config,
+        max_seq_len=max_seq_len or seq_len,
+        device=runtime.device,
+        dtype=runtime.dtype,
+        page_size=page_size,
+    )
+    resolved_position_cache = position_cache or build_qwen_position_cache(
+        runtime.rope_inv_freq,
+        runtime.attention_scaling,
+        max_seq_len=max_seq_len or seq_len,
+        dtype=runtime.dtype,
+    )
+    position_embeddings = slice_qwen_position_embeddings(resolved_position_cache, start=0, length=seq_len)
+    for layer in runtime.layers:
+        hidden_states = semantic_qwen_layer_forward(
+            config=runtime.config,
+            layer=layer,
+            rope_inv_freq=runtime.rope_inv_freq,
+            attention_scaling=runtime.attention_scaling,
+            hidden_states=hidden_states,
+            position_ids=None,
+            attention_mask=None,
+            kv_cache=kv_cache,
+            position_embeddings=position_embeddings,
+        )
+    return hidden_states, kv_cache
+
+
 def run_stack_prefill(
     runtime: QwenStackRuntime,
     input_ids: torch.LongTensor,
@@ -1576,6 +1614,35 @@ def run_semantic_stack_decode(
 ) -> tuple[torch.Tensor, KVCacheManager]:
     input_ids = input_ids.to(runtime.device)
     hidden_states = F.embedding(input_ids, runtime.embed_tokens_weight)
+    query_len = hidden_states.shape[1]
+    past_len = kv_cache.get_seq_length()
+    total_len = past_len + query_len
+    resolved_position_cache = position_cache or build_qwen_position_cache(
+        runtime.rope_inv_freq,
+        runtime.attention_scaling,
+        max_seq_len=total_len,
+        dtype=runtime.dtype,
+    )
+    position_embeddings = slice_qwen_position_embeddings(resolved_position_cache, start=past_len, length=query_len)
+    rms_norm_eps = runtime.config.rms_norm_eps
+    for layer in runtime.layers:
+        hidden_states = semantic_qwen_decode_layer_forward(
+            layer,
+            hidden_states,
+            kv_cache,
+            position_embeddings,
+            rms_norm_eps,
+        )
+    return hidden_states, kv_cache
+
+
+def run_semantic_stack_decode_from_hidden(
+    runtime: QwenSemanticStackRuntime,
+    hidden_states: torch.Tensor,
+    kv_cache: KVCacheManager,
+    position_cache: tuple[torch.Tensor, torch.Tensor] | None = None,
+) -> tuple[torch.Tensor, KVCacheManager]:
+    hidden_states = hidden_states.to(runtime.device, dtype=runtime.dtype)
     query_len = hidden_states.shape[1]
     past_len = kv_cache.get_seq_length()
     total_len = past_len + query_len

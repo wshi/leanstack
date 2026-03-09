@@ -49,6 +49,7 @@ The fused serving tensors deliberately remove some runtime concatenation work:
 - model geometry and critical hyperparameters (`rms_norm_eps`, `rope_theta`)
 - exact prompt buckets
 - benchmark bucket metadata
+- speculative-mode metadata for draft/verifier appliance variants
 - required kernels
 - backend policy
 - file inventory
@@ -65,6 +66,7 @@ What it already gives us:
 - serving-only fused tensor names
 - stable per-layer file boundaries
 - explicit bucket metadata
+- optional speculative-mode metadata for exact self-speculative bring-up
 - enough model geometry to rebuild a resident semantic stack without consulting Hugging Face tensor names
 - a machine-readable manifest for later `leanserve` work
 
