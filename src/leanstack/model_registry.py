@@ -34,6 +34,19 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
             "Use PTX only as a diagnostic aid when understanding a compiler miss, not as the benchmarked steady-state backend.",
             "Inspect SASS for every hot kernel that enters the official comparison path.",
         ),
+        exact_prompt_buckets=(64, 512, 1024),
+        pack_contract=(
+            "Convert the public BF16 checkpoint into a serving-only artifact instead of reading Hugging Face tensor names at request time.",
+            "Offline-pack `QKV`, `gate/up`, `down_proj`, and `lm_head` into the exact layout consumed by the active cuTile kernels.",
+            "Precompute bucket-specific metadata: exact prompt buckets, scratch sizes, KV extents, and graph-capture shapes.",
+            "Treat the original checkpoint as staging input; treat the packed artifact as the serving format.",
+        ),
+        serve_contract=(
+            "Run one resident process per GPU for one fixed model and one fixed precision policy.",
+            "Accept only exact prompt buckets for the official benchmark path, with deterministic decode and fixed stopping rules.",
+            "Keep weights, KV, scratch buffers, and per-bucket graphs resident on GPU after startup.",
+            "Avoid framework-style automatic placement, runtime discovery, heterogeneous offload, and cross-model dispatch.",
+        ),
         required_kernels=(
             "bf16-gemm",
             "rmsnorm",
@@ -56,11 +69,12 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
             "Deployment target is fixed to the public Qwen3-1.7B-Base BF16 checkpoint on GB10 / sm_121.",
             "Only the user request is intended to stay dynamic; model geometry, precision policy, kernel inventory, and dispatch order should be fixed by the model-chip contract.",
             "KV page layout, RoPE policy, BF16 linear strategy, and MLP fusion rules are fixed by the adapter.",
+            "Official benchmark buckets are fixed and exact, not merely capped: 64-token decode buckets and 1024-token prefill buckets.",
             "The intended execution path is GPU-resident and explicit, without framework-managed CPU offload.",
             "FP8 and FP4 stay deferred until they beat or clearly improve upon the BF16 throughput-first path.",
         ),
         dynamic_inputs=(
-            "User request payload: prompt tokens and requested decode budget.",
+            "User request payload within the fixed bucket contract: prompt content and requested decode budget.",
             "Stopping condition derived from generated tokens or stop tokens.",
         ),
         deferred_compatibility=(
@@ -74,6 +88,7 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
             "Treat TensorRT-LLM, vLLM, and SGLang as external baselines, not implementation dependencies.",
             "Treat broad compatibility as a deferred cost unless it is required by the first model-chip contract.",
             "Treat throughput as the primary optimization target, but only count wins that stay on the cuTile/TileIR path as official project evidence.",
+            "Do not expect a smaller runtime alone to beat vLLM; the project must reduce bytes moved per token, kernels launched per token, or host orchestration per token.",
         ),
     ),
     "glm": ModelSpec(

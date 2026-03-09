@@ -5,6 +5,7 @@ Date: 2026-03-07
 ## Thesis
 
 `leanstack` is not trying to become another large inference framework.
+It is also no longer trying to become a smaller generic inference framework.
 
 The project thesis is narrower and harder:
 
@@ -14,7 +15,8 @@ The project thesis is narrower and harder:
 - target one concrete hardware class first: Blackwell, currently the remote GB10 / DGX Spark machine
 - target the actual remote compiler surface as `sm_121`, not a vague "future Blackwell" abstraction
 - treat compatibility-driven software complexity as a tax, not a requirement
-- measure whether an agent-built, hardware-near stack can stay materially simpler than the current framework-heavy ecosystem while also showing a real performance advantage on that fixed contract
+- build an appliance, not a generic runtime: `leanpack` for serving artifacts and `leanserve` for a static resident decode service
+- measure whether an agent-built, hardware-near appliance can stay materially simpler than the current framework-heavy ecosystem while also showing a real performance advantage on that fixed contract
 
 ## Central hypothesis
 
@@ -34,6 +36,15 @@ That compatibility is valuable, but it also creates a large software tax.
 - spend tokens instead of carrying a permanently generalized runtime
 - recover efficiency, inspectability, and customization from that narrower scope
 - eliminate as much runtime uncertainty as possible so the user request becomes the dominant dynamic variable
+
+From first principles, that means the project should optimize the terms that actually set single-request decode throughput:
+
+- bytes moved per token
+- decisive kernel quality
+- KV read/write cost
+- host intervention frequency
+
+It should not expect repo size or runtime neatness, by themselves, to win a throughput comparison.
 
 The project is therefore not only a performance effort. It is an economic and architectural experiment about when agent cost is lower than compatibility cost.
 
@@ -75,12 +86,14 @@ The intended static contract is:
 The intended outcome is that this contract becomes static:
 
 - fixed model geometry
+- fixed packed weight layout
 - fixed tensor layout
 - fixed precision policy
 - fixed page layout
 - fixed kernel set
 - fixed scheduler shape
 - fixed hardware target
+- fixed prompt-token buckets for the official comparison path
 
 The user request should be the only first-class dynamic input.
 
@@ -131,8 +144,9 @@ The intended outcome is that a bounded agent token budget can replace a large am
 ### Technical success
 
 - the repo keeps an explicit, owned BF16 path running on the remote GB10 and the official hot path stays on `cuTile/TileIR`
+- the repo defines an offline serving-artifact format and a resident appliance contract for the fixed Qwen/GB10 pair
 - the repo explicitly records why FP8 and FP4 are still blocked on the public stack
-- `Qwen3-1.7B-Base` BF16 runs end to end on the remote Blackwell machine through `leanstack`
+- `Qwen3-1.7B-Base` BF16 runs end to end on the remote Blackwell machine through `leanpack + leanserve`
 - the critical path is inspectable down to TileIR and SASS
 - the stack exposes a small and auditable runtime surface
 - the core path does not rely on framework-managed uncertainty such as automatic placement or CPU offload
@@ -146,7 +160,7 @@ The intended outcome is that a bounded agent token budget can replace a large am
 
 ### Go / no-go success
 
-- if `leanstack` cannot show a real performance or complexity advantage on the fixed `Qwen3-1.7B-Base BF16 + GB10` contract, the repo should say so directly
+- if `leanstack` cannot show a real performance or complexity advantage on the fixed `Qwen3-1.7B-Base BF16 + GB10` appliance contract, the repo should say so directly
 - if the public `cuTile` path cannot clear FP8 or FP4 later, that result is part of the research outcome rather than something to hide
 
 ### Research success

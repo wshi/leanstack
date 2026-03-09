@@ -35,6 +35,9 @@ class ModelSpec:
     compile_gate: str | None = None
     legacy_reference: str | None = None
     backend_policy: tuple[str, ...] = field(default_factory=tuple)
+    exact_prompt_buckets: tuple[int, ...] = field(default_factory=tuple)
+    pack_contract: tuple[str, ...] = field(default_factory=tuple)
+    serve_contract: tuple[str, ...] = field(default_factory=tuple)
     bring_up_sequence: tuple[str, ...] = field(default_factory=tuple)
     static_contract: tuple[str, ...] = field(default_factory=tuple)
     dynamic_inputs: tuple[str, ...] = field(default_factory=tuple)

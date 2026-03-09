@@ -23,23 +23,28 @@ DEFAULT_PHASES: tuple[PlanPhase, ...] = (
     ),
     PlanPhase(
         name="Phase 2",
-        goal="Map Qwen3-1.7B-Base BF16 checkpoint metadata into an adapter-owned contract and keep deferred compatibility features explicit.",
+        goal="Map Qwen3-1.7B-Base BF16 checkpoint metadata into an adapter-owned semantic contract and define the future serving artifact format.",
         exit_gate="The repo can parse the Qwen3-1.7B-Base BF16 checkpoint contract without a monolithic runtime.",
     ),
     PlanPhase(
         name="Phase 3",
-        goal="Stand up a throughput-first runtime for Qwen3-1.7B-Base BF16 once the precision and checkpoint contracts are proven.",
-        exit_gate="Single-request prefill and decode execute for the Qwen3-1.7B-Base BF16 target on the remote machine.",
+        goal="Build `leanpack`: convert the public BF16 checkpoint into serving-only artifacts with exact bucket metadata and kernel-friendly layouts.",
+        exit_gate="A serving artifact exists for Qwen3-1.7B-Base BF16, with packed weights, manifests, and exact prompt-bucket metadata.",
     ),
     PlanPhase(
         name="Phase 4",
-        goal="Benchmark leanstack against exact-format external baselines and stop if the specialized stack does not show a real advantage.",
-        exit_gate="A first comparison table exists for a comparable Qwen3-1.7B-Base BF16 profile on the same machine, including complexity proxies and a go/no-go conclusion.",
+        goal="Build `leanserve`: a static resident decode appliance for the packed artifact on GB10/sm_121.",
+        exit_gate="The resident appliance holds weights, KV, scratch, and exact-bucket decode state on GPU for Qwen3-1.7B-Base BF16.",
     ),
     PlanPhase(
         name="Phase 5",
-        goal="Expose a serving surface only after the execution path and specialization-versus-compatibility story are stable.",
-        exit_gate="A remote endpoint serves one model through the new stack.",
+        goal="Benchmark appliance-mode leanstack against warmed external baselines and stop if the specialized appliance still does not show a real advantage.",
+        exit_gate="A first exact-bucket comparison table exists for the packed-appliance path on the same machine, including a go/no-go conclusion.",
+    ),
+    PlanPhase(
+        name="Phase 6",
+        goal="Expose a serving surface only after the appliance path and specialization-versus-compatibility story are stable.",
+        exit_gate="A remote endpoint serves one fixed packed model through the new appliance path.",
     ),
 )
 

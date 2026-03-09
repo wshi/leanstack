@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 
+from .appliance import render_appliance_reset, render_leanpack_plan, render_leanserve_plan
 from .benchmark import get_benchmark_profile, list_benchmark_profiles
 from .comparison import render_comparison_plan
 from .gap_registry import get_gap_report
@@ -21,6 +22,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("show-plan", help="Print the phased execution plan.")
     subparsers.add_parser("show-comparison-plan", help="Print the staged comparison protocol.")
+
+    appliance = subparsers.add_parser("show-appliance-reset", help="Print the first-principles appliance reset.")
+    appliance.add_argument("--model", default="qwen")
+    appliance.set_defaults(handler=handle_show_appliance_reset)
+
+    leanpack = subparsers.add_parser("show-leanpack-plan", help="Print the offline serving-artifact plan.")
+    leanpack.add_argument("--model", default="qwen")
+    leanpack.set_defaults(handler=handle_show_leanpack_plan)
+
+    leanserve = subparsers.add_parser("show-leanserve-plan", help="Print the resident decode appliance plan.")
+    leanserve.add_argument("--model", default="qwen")
+    leanserve.set_defaults(handler=handle_show_leanserve_plan)
 
     models = subparsers.add_parser("list-models", help="List supported adapter targets.")
     models.set_defaults(handler=handle_list_models)
@@ -69,6 +82,24 @@ def handle_list_models(_: argparse.Namespace) -> int:
     for spec in list_models():
         print(f"{spec.key}: {spec.family}")
         print(f"  loader hint: {spec.loader_hint}")
+    return 0
+
+
+def handle_show_appliance_reset(args: argparse.Namespace) -> int:
+    spec = get_model_spec(args.model)
+    print(render_appliance_reset(spec))
+    return 0
+
+
+def handle_show_leanpack_plan(args: argparse.Namespace) -> int:
+    spec = get_model_spec(args.model)
+    print(render_leanpack_plan(spec))
+    return 0
+
+
+def handle_show_leanserve_plan(args: argparse.Namespace) -> int:
+    spec = get_model_spec(args.model)
+    print(render_leanserve_plan(spec))
     return 0
 
 

@@ -1,6 +1,6 @@
 # leanstack
 
-`leanstack` is a clean-slate, cuTile-native, GB10-first LLM inference stack.
+`leanstack` is a clean-slate, cuTile-native, GB10-first LLM inference appliance project.
 
 The name is intentional:
 
@@ -11,26 +11,28 @@ The name is intentional:
 
 The current serving ecosystem pays a large compatibility tax: too many layers, too much genericity, and too much hidden state for workloads that ultimately run one concrete model on one concrete machine.
 
-This repo explores a different path with five constraints:
+This repo explores a different path with six constraints:
 
 1. The execution path must stay explicit down to `cuTile -> TileIR -> cubin -> SASS`.
 2. The runtime must stay small enough that an agent can regenerate and modify it cheaply.
 3. The first contract is a model-chip pair, `Qwen/Qwen3-1.7B-Base + BF16 checkpoint` on `GB10 / sm_121`, not "all models on all hardware."
 4. `vLLM`, `SGLang`, `llama.cpp`, and similar systems are compatibility-heavy baselines to compare against, not runtime dependencies.
 5. Remote validation on the DGX Spark machine is part of the development loop, not an afterthought.
+6. The target product is not a generic runtime. It is a `leanpack + leanserve` appliance: offline serving artifacts plus a static resident decode service.
 
-In the strongest form of this thesis, the only meaningful dynamic input should be the user request payload. Model geometry, chip target, precision policy, memory layout, kernel inventory, and dispatch policy should all be fixed by the `Qwen3-1.7B-Base BF16 + GB10` contract. Backend choice is still explicit, but it is selected for throughput, not aesthetics. FP8 and FP4 stay deferred until they clearly beat the BF16 path.
+In the strongest form of this thesis, the only meaningful dynamic input should be the user request payload inside a fixed bucket contract. Model geometry, chip target, precision policy, packed weight layout, memory layout, kernel inventory, and dispatch policy should all be fixed by the `Qwen3-1.7B-Base BF16 + GB10` contract. Backend choice is still explicit, but it is selected for throughput, not aesthetics. FP8 and FP4 stay deferred until they clearly beat the BF16 path.
 
 ## Scope
 
-Stage 0 in this repo does five concrete things:
+The appliance reset in this repo does six concrete things:
 
 1. Defines the project thesis for an agent-built, model-chip-specific LLM stack.
 2. Provides local and remote tooling to validate the cuTile -> TileIR -> cubin -> SASS path.
 3. Keeps precision choice explicit through an executable BF16 / FP8 / FP4 gate on the remote machine.
 4. Rebuilds the runtime around `Qwen/Qwen3-1.7B-Base` BF16 instead of the legacy `Qwen3-32B` reference path.
 5. Keeps the official hot path on `cuTile -> TileIR -> cubin`.
-6. Defines a staged comparison protocol against `vLLM`, `SGLang`, and other external baselines, including both runtime efficiency and software-stack complexity.
+6. Defines `leanpack` and `leanserve` as the new primary build products: packed serving artifacts and a static resident decode service.
+7. Defines a staged comparison protocol against `vLLM`, `SGLang`, and other external baselines, including both runtime efficiency and software-stack complexity.
 
 ## Repository layout
 
@@ -38,6 +40,7 @@ Stage 0 in this repo does five concrete things:
 - `docs/ARCHITECTURE.md`: stack boundaries and replacement strategy.
 - `docs/BENCHMARK_PLAN.md`: benchmark methodology and comparison rules.
 - `docs/COMPARISON_PROTOCOL.md`: staged comparison gates from framework baselines to cuTile kernels to full-stack results.
+- `src/leanstack/appliance.py`: first-principles appliance reset plus `leanpack`/`leanserve` plan renderers.
 - `docs/EXECUTION_PLAN.md`: phased build plan and verification gates.
 - `docs/IMPLEMENTATION_GAPS.md`: structured gap analysis from borrowed `transformers` semantics to adapter-owned `cuTile/TileIR` kernels.
 - `docs/PRECISION_GATES.md`: the active BF16 / FP8 / FP4 gate results for the public cuTile stack on `sm_121`.
@@ -67,6 +70,9 @@ From `/Users/wei/work/spark/leanstack`:
 ```bash
 PYTHONPATH=src python3 -m leanstack.cli show-plan
 PYTHONPATH=src python3 -m leanstack.cli show-comparison-plan
+PYTHONPATH=src python3 -m leanstack.cli show-appliance-reset --model qwen
+PYTHONPATH=src python3 -m leanstack.cli show-leanpack-plan --model qwen
+PYTHONPATH=src python3 -m leanstack.cli show-leanserve-plan --model qwen
 PYTHONPATH=src python3 -m leanstack.cli list-hot-kernel-cases --default-only
 PYTHONPATH=src python3 -m leanstack.cli remote-env
 PYTHONPATH=src python3 -m leanstack.cli show-contract --model qwen
@@ -136,7 +142,13 @@ Current facts:
 - the previous `Qwen3-32B BF16` borrowed and semantic runtime loops remain in the repo as legacy reference data, not the active first target
 - those legacy runs produced only about `2 tokens/s` on the remote GB10, which is not a credible starting point for a framework comparison
 
-The next hard gate is therefore: keep the BF16 hot-kernel suite green through `cuTile -> TileIR -> cubin -> SASS`, then use those kernels to drive the first meaningful whole-network benchmark table.
+The next hard gate is therefore no longer "shave more runtime glue."
+
+The next hard gates are:
+
+- define the offline `leanpack` artifact format for `Qwen3-1.7B-Base` BF16
+- define the resident `leanserve` appliance contract for exact prompt buckets on `GB10 / sm_121`
+- move decisive cuTile kernels from microbenchmarks into that appliance path
 
 The deeper hypothesis is that, once compatibility is treated as optional instead of mandatory, an agent can spend a bounded token budget to generate a more direct and efficient software path for a specific model-chip pair.
 

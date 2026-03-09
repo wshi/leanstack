@@ -35,6 +35,7 @@ Deliverables:
 
 - semantic contract for `Qwen/Qwen3-1.7B-Base`
 - checkpoint contract for the public BF16 snapshot
+- serving-artifact contract for `leanpack`
 - explicit tensor mapping for BF16 linears and residual paths
 - explicit record of which generic framework features are being deferred as compatibility tax
 
@@ -42,7 +43,7 @@ Exit gate:
 
 - the repo can parse the target BF16 checkpoint contract without leaning on a monolithic runtime
 
-## Phase 3: Stand up the first runtime slice
+## Phase 3: Build `leanpack`
 
 Target:
 
@@ -51,47 +52,59 @@ Target:
 Deliverables:
 
 - executable Stage 1 hot-kernel suite on the exact 1.7B geometry
-- BF16-aware weight loader
-- tokenizer wiring
-- tensor layout adapter
-- cache layout adapter
-- kernel coverage matrix for BF16 linears, norms, RoPE, and GQA
-- Qwen-specific prompt and thinking-mode handling for baseline runs
+- packed serving weights in kernel-consumption order
+- tensor manifest with offsets and dtypes
+- exact prompt-bucket manifest for `64`, `512`, and `1024`
+- artifact layout for KV extents, scratch sizes, and per-bucket graph shapes
 
 Exit gate:
 
-- single-request prefill and decode execute for `Qwen3-1.7B-Base` BF16 on the remote machine
+- `leanpack` can emit a serving-only artifact for `Qwen3-1.7B-Base` BF16 on the remote machine
 
-## Phase 4: Benchmark Against Framework Baselines
+## Phase 4: Build `leanserve`
+
+Deliverables:
+
+- resident single-model process
+- exact-bucket request admission for the official benchmark path
+- preallocated KV and scratch buffers
+- graph-capture-friendly per-bucket decode state
+- deterministic decode path for the official claim profiles
+
+Exit gate:
+
+- the resident appliance can serve `Qwen3-1.7B-Base` BF16 through the packed artifact path on the remote machine
+
+## Phase 5: Benchmark Against Framework Baselines
 
 Deliverables:
 
 - benchmark harness for `generated tokens/s`, latency, and memory
-- exact-format BF16 baseline configs wherever possible
+- exact-bucket BF16 baseline configs wherever possible
 - `vLLM` and `SGLang` baseline configs when they can run the same or a clearly labeled equivalent format
 - secondary deployment reference for `llama.cpp`
 - comparative report that records process shape, operational complexity, and compatibility tax
 
 Exit gate:
 
-- a first comparison table exists for a comparable `Qwen3-1.7B-Base` BF16 profile on the same machine, including a go / no-go conclusion
+- a first comparison table exists for a comparable `Qwen3-1.7B-Base` BF16 appliance profile on the same machine, including a go / no-go conclusion
 
-## Phase 5: Minimal Serving Surface
+## Phase 6: Minimal Serving Surface
 
 Deliverables:
 
-- minimal OpenAI-compatible API
+- minimal API for the fixed packed artifact
 - streaming token output
 - latency and throughput counters
 - traceable failure logs
 
 Exit gate:
 
-- remote machine serves `Qwen3-1.7B-Base` BF16 through the new stack after the benchmark contract is stable
+- remote machine serves `Qwen3-1.7B-Base` BF16 through `leanserve` after the benchmark contract is stable
 
 ## Current blockers to clear
 
-1. Retarget the active runtime from the legacy `Qwen3-32B` work to `Qwen3-1.7B-Base` BF16.
-2. Separate `Qwen3-1.7B-Base` semantic ownership from BF16 checkpoint ownership.
-3. Lift the hot-kernel wins from `q_proj/o_proj/gate_up/rmsnorm` into a real runtime slice and close the `kv_proj/down_proj` gap.
+1. Define the `leanpack` output format instead of treating the public checkpoint as the serving format.
+2. Separate semantic ownership, checkpoint ownership, and serving-artifact ownership for `Qwen3-1.7B-Base` BF16.
+3. Lift the decisive hot-kernel wins into the resident appliance path and close the `kv_proj/down_proj` gap.
 4. Keep the legacy `Qwen3-32B BF16` path as reference data only, not as the active optimization target.

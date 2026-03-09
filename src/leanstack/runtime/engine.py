@@ -56,6 +56,19 @@ class RuntimeBlueprint:
             lines.append("Backend policy:")
             for item in self.model.backend_policy:
                 lines.append(f"- {item}")
+        if self.model.exact_prompt_buckets:
+            lines.append(
+                "Exact prompt buckets: "
+                + ", ".join(str(bucket) for bucket in self.model.exact_prompt_buckets)
+            )
+        if self.model.pack_contract:
+            lines.append("Leanpack contract:")
+            for item in self.model.pack_contract:
+                lines.append(f"- {item}")
+        if self.model.serve_contract:
+            lines.append("Leanserve contract:")
+            for item in self.model.serve_contract:
+                lines.append(f"- {item}")
         lines.append("Required kernels:")
         for kernel in self.model.required_kernels:
             lines.append(f"- {kernel}")
@@ -80,6 +93,19 @@ class StaticInferenceContract:
         if self.model.backend_policy:
             lines.append("Backend policy:")
             for item in self.model.backend_policy:
+                lines.append(f"- {item}")
+        if self.model.exact_prompt_buckets:
+            lines.append(
+                "Exact prompt buckets: "
+                + ", ".join(str(bucket) for bucket in self.model.exact_prompt_buckets)
+            )
+        if self.model.pack_contract:
+            lines.append("Leanpack contract:")
+            for item in self.model.pack_contract:
+                lines.append(f"- {item}")
+        if self.model.serve_contract:
+            lines.append("Leanserve contract:")
+            for item in self.model.serve_contract:
                 lines.append(f"- {item}")
         lines.append("Dynamic:")
         for item in self.model.dynamic_inputs:
