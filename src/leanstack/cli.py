@@ -43,6 +43,24 @@ def build_parser() -> argparse.ArgumentParser:
     build_leanpack.add_argument("--overwrite", action="store_true")
     build_leanpack.set_defaults(handler=handle_build_leanpack)
 
+    fit_draft_head = subparsers.add_parser(
+        "fit-draft-head",
+        help="Fit and store an auxiliary draft head for speculative decode.",
+    )
+    fit_draft_head.add_argument("--model-path", required=True)
+    fit_draft_head.add_argument("--pack-dir", type=Path, required=True)
+    fit_draft_head.add_argument("--draft-layer-count", type=int, required=True)
+    fit_draft_head.add_argument("--key", required=True)
+    fit_draft_head.add_argument("--chunk-tokens", type=int, default=128)
+    fit_draft_head.add_argument("--max-chunks", type=int, default=32)
+    fit_draft_head.add_argument("--ridge-lambda", type=float, default=0.1)
+    fit_draft_head.add_argument("--calibration-mode", choices=("prefill", "decode"), default="prefill")
+    fit_draft_head.add_argument("--decode-steps", type=int, default=16)
+    fit_draft_head.add_argument("--device", default="cuda:0")
+    fit_draft_head.add_argument("--dtype", default="bfloat16")
+    fit_draft_head.add_argument("--repo-root", type=Path, default=Path.cwd())
+    fit_draft_head.set_defaults(handler=handle_fit_draft_head)
+
     inspect_leanpack = subparsers.add_parser("inspect-leanpack", help="Inspect a packed serving artifact.")
     inspect_leanpack.add_argument("--pack-dir", type=Path, required=True)
     inspect_leanpack.set_defaults(handler=handle_inspect_leanpack)
@@ -141,6 +159,27 @@ def handle_build_leanpack(args: argparse.Namespace) -> int:
         write_tensors=not args.manifest_only,
     )
     print(json.dumps(manifest.as_payload(), indent=2))
+    return 0
+
+
+def handle_fit_draft_head(args: argparse.Namespace) -> int:
+    from .draft_head import fit_qwen_draft_projection
+
+    result = fit_qwen_draft_projection(
+        model_path=args.model_path,
+        pack_dir=args.pack_dir,
+        draft_layer_count=args.draft_layer_count,
+        key=args.key,
+        chunk_tokens=args.chunk_tokens,
+        max_chunks=args.max_chunks,
+        ridge_lambda=args.ridge_lambda,
+        calibration_mode=args.calibration_mode,
+        decode_steps=args.decode_steps,
+        device=args.device,
+        dtype=args.dtype,
+        repo_root=args.repo_root,
+    )
+    print(json.dumps(result.as_payload(), indent=2))
     return 0
 
 

@@ -146,6 +146,13 @@ Measured whole-model results so far:
   - `draft=12`, `k=4`: `acceptance_ratio ≈ 0.037`, `committed_tokens_per_cycle ≈ 1.07`
   - `draft=20`, `k=2`: `acceptance_ratio ≈ 0.227`, `committed_tokens_per_cycle ≈ 1.45`
   - `draft=24`, `k=2`: `acceptance_ratio ≈ 0.368`, `committed_tokens_per_cycle ≈ 1.60`
+- `leanstack`, exact speculative on the main exact-bucket `decode_64_256` profile after block verification and auxiliary draft heads:
+  - `draft=24`, `k=2`, `draft24_proj_v1`: `runtime_tokens_per_second ≈ 40.8`, `acceptance_ratio ≈ 0.907`, `committed_tokens_per_cycle ≈ 2.81`
+  - `draft=24`, `k=4`, `draft24_proj_v1`: `runtime_tokens_per_second ≈ 43.9`, `acceptance_ratio = 1.0`, `committed_tokens_per_cycle ≈ 4.92`
+- `leanstack`, decode-calibrated shallow draft heads on the same exact-bucket profile:
+  - `draft=8`, `k=2`, `draft8_decode_v1`: `runtime_tokens_per_second ≈ 25.7`, `acceptance_ratio ≈ 0.236`
+  - `draft=12`, `k=2`, `draft12_decode_v1`: `runtime_tokens_per_second ≈ 16.8`, `acceptance_ratio ≈ 0.008`
+  - `draft=16`, `k=2`, `draft16_decode_v1`: `runtime_tokens_per_second ≈ 16.1`, `acceptance_ratio ≈ 0.010`
 - `UI smoke`, `max_new_tokens=16`:
   - `vLLM generated_tokens_per_second ≈ 10.56`
   - `leanstack runtime_tokens_per_second ≈ 14.64`
@@ -156,7 +163,10 @@ Interpretation:
 - the current `leanstack` path already beats the cold first-request framework path and a short `16-token` UI smoke
 - the checkpoint-driven semantic path no longer trails warmed `vLLM` by a wide margin, but the more important fact is that the packed `leanpack -> leanserve` path now narrowly clears the warmed `vLLM` number on the main exact-bucket `decode_64_256` profile
 - the packed path is therefore the new official serving path for performance work; future optimization should focus on widening that margin, not on re-optimizing the older checkpoint-driven runtime
-- the first exact speculative loop is now implemented and working, but the initial acceptance ratios show that a naive early-exit draft with the shared final head is still too weak for the `30%` target
+- the first exact speculative loop is now implemented and working
+- block verifier execution and auxiliary draft heads materially improved the speculative path
+- but a same-model prefix/suffix split still does not beat the packed non-spec appliance on the main profile, even when `draft=24, k=4` reaches `100%` acceptance
+- the practical conclusion is that the repo now needs a genuinely smaller draft artifact, not more tuning of the same-model split
 
 ## Stage 1 hot-kernel status
 

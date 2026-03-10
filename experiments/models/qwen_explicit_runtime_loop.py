@@ -10,6 +10,7 @@ from transformers import AutoTokenizer
 
 from leanstack.prompt_bucket import build_exact_prompt_text
 from leanstack.leanserve import (
+    load_qwen_draft_head_projection,
     materialize_qwen_full_semantic_runtime_from_leanpack,
     materialize_qwen_semantic_stack_from_leanpack,
 )
@@ -27,8 +28,10 @@ from leanstack.runtime.qwen_explicit import (
     run_semantic_stack_decode,
     run_semantic_stack_prefill_from_hidden,
     run_semantic_stack_prefill,
+    run_semantic_stack_verify_from_hidden,
     run_stack_decode,
     run_stack_prefill,
+    select_semantic_greedy_token_with_projection,
     select_semantic_greedy_token,
     select_greedy_token,
     try_compile,
@@ -53,6 +56,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--speculative", action="store_true", help="Enable exact self-speculative decode.")
     parser.add_argument("--draft-layer-count", type=int, default=12)
     parser.add_argument("--proposal-len", type=int, default=4)
+    parser.add_argument("--draft-head-key", default="")
     parser.add_argument("--resident-requests", type=int, default=1)
     parser.add_argument("--warmup-requests", type=int, default=0)
     parser.add_argument("--capture-decode-step-timings", action="store_true")
@@ -214,7 +218,14 @@ def materialize_speculative_runtimes(args: argparse.Namespace):
         dtype=args.dtype,
         include_output_head=True,
     )
-    return draft_runtime, verifier_runtime
+    draft_projection = load_qwen_draft_head_projection(
+        args.pack_dir,
+        draft_layer_count=args.draft_layer_count,
+        key=args.draft_head_key or None,
+        device=args.device,
+        dtype=args.dtype,
+    )
+    return draft_runtime, verifier_runtime, draft_projection
 
 
 def select_borrowed_greedy_token(runtime, hidden_states: torch.Tensor) -> torch.LongTensor:
@@ -391,6 +402,7 @@ def run_speculative_request(
     *,
     draft_runtime,
     verifier_runtime,
+    draft_projection: torch.Tensor | None,
     tokenizer,
     input_ids: torch.LongTensor,
     device: torch.device,
@@ -409,6 +421,7 @@ def run_speculative_request(
         "draft_layer_count": len(draft_runtime.layer_indices),
         "verifier_layer_count": len(verifier_runtime.layer_indices),
         "proposal_len": proposal_len,
+        "draft_head_enabled": draft_projection is not None,
         "cycles": 0,
         "proposed_tokens": 0,
         "accepted_proposal_tokens": 0,
@@ -455,14 +468,22 @@ def run_speculative_request(
             speculative_summary["cycles"] += 1
             remaining_tokens = max_new_tokens - len(generated_ids)
             cycle_proposal_len = min(proposal_len, remaining_tokens)
-            base_snapshot = draft_cache.snapshot_state()
+            base_snapshot = draft_cache.snapshot_cursor()
+            verifier_base_snapshot = verifier_cache.snapshot_cursor()
             draft_snapshots = [base_snapshot]
             proposed_ids: list[int] = []
             proposed_hiddens: list[torch.Tensor] = []
             draft_hidden_cursor = current_draft_hidden
 
             for _ in range(cycle_proposal_len):
-                draft_token = select_semantic_greedy_token(draft_runtime, draft_hidden_cursor)
+                if draft_projection is None:
+                    draft_token = select_semantic_greedy_token(draft_runtime, draft_hidden_cursor)
+                else:
+                    draft_token = select_semantic_greedy_token_with_projection(
+                        draft_runtime,
+                        draft_hidden_cursor,
+                        draft_projection,
+                    )
                 proposed_ids.append(int(draft_token.item()))
                 draft_hidden_cursor, draft_cache = run_semantic_stack_decode(
                     draft_runtime,
@@ -471,21 +492,38 @@ def run_speculative_request(
                     position_cache=position_cache,
                 )
                 proposed_hiddens.append(draft_hidden_cursor)
-                draft_snapshots.append(draft_cache.snapshot_state())
+                draft_snapshots.append(draft_cache.snapshot_cursor())
 
             speculative_summary["proposed_tokens"] += len(proposed_ids)
-            exact_token = current_exact_token
+            verifier_hidden_block = None
+            if proposed_hiddens:
+                verifier_hidden_block, verifier_cache = run_semantic_stack_verify_from_hidden(
+                    verifier_runtime,
+                    torch.cat(proposed_hiddens, dim=1),
+                    verifier_cache,
+                    position_cache=position_cache,
+                )
+            verifier_tokens: list[int] = [int(current_exact_token.item())]
+            if verifier_hidden_block is not None:
+                for proposal_idx in range(verifier_hidden_block.shape[1]):
+                    next_token = select_semantic_greedy_token(
+                        verifier_runtime,
+                        verifier_hidden_block[:, proposal_idx : proposal_idx + 1, :],
+                    )
+                    verifier_tokens.append(int(next_token.item()))
             accepted_this_cycle = 0
             cycle_committed: list[int] = []
             mismatch = False
 
             for proposal_idx, proposal_id in enumerate(proposed_ids):
-                if proposal_id != int(exact_token.item()):
+                exact_token = verifier_tokens[proposal_idx]
+                if proposal_id != exact_token:
                     mismatch = True
                     speculative_summary["rejected_proposal_tokens"] += len(proposed_ids) - proposal_idx
-                    cycle_committed.append(int(exact_token.item()))
-                    draft_cache.restore_state(draft_snapshots[proposal_idx])
-                    exact_token_for_draft = exact_token.clone()
+                    cycle_committed.append(exact_token)
+                    draft_cache.restore_cursor(draft_snapshots[proposal_idx])
+                    verifier_cache.restore_cursor(verifier_cache.cursor_after_tokens(verifier_base_snapshot, proposal_idx))
+                    exact_token_for_draft = torch.tensor([[exact_token]], device=device, dtype=torch.long)
                     current_draft_hidden, draft_cache = run_semantic_stack_decode(
                         draft_runtime,
                         exact_token_for_draft,
@@ -505,16 +543,9 @@ def run_speculative_request(
                 accepted_this_cycle += 1
                 speculative_summary["accepted_proposal_tokens"] += 1
                 current_draft_hidden = proposed_hiddens[proposal_idx]
-                verifier_hidden_accept, verifier_cache = run_semantic_stack_decode_from_hidden(
-                    verifier_runtime,
-                    current_draft_hidden,
-                    verifier_cache,
-                    position_cache=position_cache,
-                )
-                exact_token = select_semantic_greedy_token(verifier_runtime, verifier_hidden_accept)
 
             if not mismatch:
-                current_exact_token = exact_token
+                current_exact_token = torch.tensor([[verifier_tokens[len(proposed_ids)]]], device=device, dtype=torch.long)
                 if len(generated_ids) + len(cycle_committed) < max_new_tokens:
                     bonus_token = current_exact_token.clone()
                     cycle_committed.append(int(bonus_token.item()))
@@ -651,7 +682,7 @@ def main() -> int:
     sync_device(device)
     start = time.perf_counter()
     if args.speculative:
-        draft_runtime, verifier_runtime = materialize_speculative_runtimes(args)
+        draft_runtime, verifier_runtime, draft_projection = materialize_speculative_runtimes(args)
         runtime = verifier_runtime
     else:
         runtime = materialize_runtime(args)
@@ -684,6 +715,7 @@ def main() -> int:
             request_result = run_speculative_request(
                 draft_runtime=draft_runtime,
                 verifier_runtime=verifier_runtime,
+                draft_projection=draft_projection,
                 tokenizer=tokenizer,
                 input_ids=input_ids.to(device),
                 device=device,
@@ -736,6 +768,7 @@ def main() -> int:
         "speculative": bool(args.speculative),
         "draft_layer_count": args.draft_layer_count if args.speculative else None,
         "proposal_len": args.proposal_len if args.speculative else None,
+        "draft_head_key": args.draft_head_key or None,
         "prompt_format": resolved_prompt_format,
         "exact_prefill_bucket": bool(args.exact_prefill_bucket),
         "target_prompt_tokens": target_prompt_tokens,

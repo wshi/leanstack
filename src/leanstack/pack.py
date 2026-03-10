@@ -70,6 +70,18 @@ class SpeculativeModeEntry:
 
 
 @dataclass(frozen=True)
+class DraftHeadEntry:
+    key: str
+    draft_layer_count: int
+    file: str
+    tensor_name: str
+    input_size: int
+    output_size: int
+    fit_samples: int
+    ridge_lambda: float
+
+
+@dataclass(frozen=True)
 class PackedArtifactManifest:
     format_version: str
     created_at_utc: str
@@ -83,6 +95,7 @@ class PackedArtifactManifest:
     exact_prompt_buckets: list[int]
     buckets: list[BucketEntry]
     speculative_modes: list[SpeculativeModeEntry]
+    draft_heads: list[DraftHeadEntry]
     required_kernels: list[str]
     backend_policy: list[str]
     files: list[PackedFileEntry]
@@ -102,6 +115,7 @@ class PackedArtifactManifest:
             "exact_prompt_buckets": self.exact_prompt_buckets,
             "buckets": [asdict(bucket) for bucket in self.buckets],
             "speculative_modes": [asdict(mode) for mode in self.speculative_modes],
+            "draft_heads": [asdict(head) for head in self.draft_heads],
             "required_kernels": self.required_kernels,
             "backend_policy": self.backend_policy,
             "files": [asdict(file_entry) for file_entry in self.files],
@@ -125,6 +139,7 @@ class PackedArtifactManifest:
             speculative_modes=[
                 SpeculativeModeEntry(**mode) for mode in payload.get("speculative_modes", [])
             ],
+            draft_heads=[DraftHeadEntry(**head) for head in payload.get("draft_heads", [])],
             required_kernels=list(payload.get("required_kernels", [])),
             backend_policy=list(payload.get("backend_policy", [])),
             files=[PackedFileEntry(**file_entry) for file_entry in payload.get("files", [])],
@@ -350,6 +365,7 @@ def build_qwen_leanpack(
         exact_prompt_buckets=list(model.exact_prompt_buckets),
         buckets=_qwen_bucket_entries(model),
         speculative_modes=_qwen_speculative_modes(model),
+        draft_heads=[],
         required_kernels=list(model.required_kernels),
         backend_policy=list(model.backend_policy),
         files=files,

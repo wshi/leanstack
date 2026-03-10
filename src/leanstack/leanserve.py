@@ -9,7 +9,7 @@ import torch
 from safetensors import safe_open
 
 from .config import ModelSpec
-from .pack import PackedArtifactManifest, PackedTensorEntry, load_packed_artifact_manifest
+from .pack import DraftHeadEntry, PackedArtifactManifest, PackedTensorEntry, load_packed_artifact_manifest
 from .runtime.qwen_explicit import (
     QwenSemanticAttentionRuntime,
     QwenSemanticLayerRuntime,
@@ -123,6 +123,26 @@ class LeanPackArtifact:
                 loaded[tensor_name] = handle.get_tensor(tensor_name).to(device=device, dtype=dtype).contiguous()
         return loaded
 
+    def load_tensor(
+        self,
+        file_name: str,
+        tensor_name: str,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        return self.load_tensors(file_name, (tensor_name,), device=device, dtype=dtype)[tensor_name]
+
+    def find_draft_head(self, draft_layer_count: int, key: str | None = None) -> DraftHeadEntry | None:
+        matches = [
+            head for head in self.manifest.draft_heads
+            if head.draft_layer_count == draft_layer_count and (key is None or head.key == key)
+        ]
+        if not matches:
+            return None
+        if key is not None:
+            return matches[0]
+        return matches[-1]
+
     def qwen_config(self, fallback_model: ModelSpec | None = None) -> QwenServeConfig:
         geometry = dict(self.manifest.geometry)
         if not geometry:
@@ -223,6 +243,14 @@ class LeanPackArtifact:
                     for mode in self.manifest.speculative_modes
                 )
             )
+        if self.manifest.draft_heads:
+            lines.append(
+                "draft_heads: "
+                + ", ".join(
+                    f"{head.key}(layers={head.draft_layer_count},file={head.file})"
+                    for head in self.manifest.draft_heads
+                )
+            )
         lines.append(f"files: {len(self.manifest.files)}")
         lines.append(f"tensors: {len(self.manifest.tensors)}")
         return "\n".join(lines)
@@ -266,6 +294,13 @@ class LeanServeAppliance:
                 lines.append(
                     f"- {mode.key}: draft_layers={mode.draft_layer_count}, proposal_len={mode.proposal_len}"
                 )
+        if self.artifact.manifest.draft_heads:
+            lines.append("Draft heads:")
+            for head in self.artifact.manifest.draft_heads:
+                lines.append(
+                    f"- {head.key}: draft_layers={head.draft_layer_count}, file={head.file}, "
+                    f"shape={head.output_size}x{head.input_size}, samples={head.fit_samples}"
+                )
         return "\n".join(lines)
 
 
@@ -274,6 +309,23 @@ def load_leanpack_artifact(path_or_dir: str | Path) -> LeanPackArtifact:
     if root.name == "manifest.json":
         root = root.parent
     return LeanPackArtifact(root=root, manifest=load_packed_artifact_manifest(root))
+
+
+def load_qwen_draft_head_projection(
+    pack_dir: str | Path,
+    *,
+    draft_layer_count: int,
+    key: str | None = None,
+    device: str | torch.device = "cuda:0",
+    dtype: str | torch.dtype = "bfloat16",
+) -> torch.Tensor | None:
+    artifact = load_leanpack_artifact(pack_dir)
+    head = artifact.find_draft_head(draft_layer_count, key=key)
+    if head is None:
+        return None
+    torch_dtype = resolve_torch_dtype(dtype) if isinstance(dtype, str) else dtype
+    target_device = torch.device(device)
+    return artifact.load_tensor(head.file, head.tensor_name, device=target_device, dtype=torch_dtype)
 
 
 def build_resident_buffer_plan(

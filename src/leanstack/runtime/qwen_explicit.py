@@ -1362,6 +1362,14 @@ def run_stack_forward(runtime: QwenStackRuntime, input_ids: torch.LongTensor) ->
 def run_semantic_stack_forward(runtime: QwenSemanticStackRuntime, input_ids: torch.LongTensor) -> torch.Tensor:
     input_ids = input_ids.to(runtime.device)
     hidden_states = F.embedding(input_ids, runtime.embed_tokens_weight)
+    return run_semantic_stack_forward_from_hidden(runtime, hidden_states)
+
+
+def run_semantic_stack_forward_from_hidden(
+    runtime: QwenSemanticStackRuntime,
+    hidden_states: torch.Tensor,
+) -> torch.Tensor:
+    hidden_states = hidden_states.to(runtime.device, dtype=runtime.dtype)
     seq_len = hidden_states.shape[1]
     position_cache = build_qwen_position_cache(
         runtime.rope_inv_freq,
@@ -1665,6 +1673,49 @@ def run_semantic_stack_decode_from_hidden(
     return hidden_states, kv_cache
 
 
+def run_semantic_stack_verify_from_hidden(
+    runtime: QwenSemanticStackRuntime,
+    hidden_states: torch.Tensor,
+    kv_cache: KVCacheManager,
+    position_cache: tuple[torch.Tensor, torch.Tensor] | None = None,
+) -> tuple[torch.Tensor, KVCacheManager]:
+    hidden_states = hidden_states.to(runtime.device, dtype=runtime.dtype)
+    query_len = hidden_states.shape[1]
+    if query_len <= 0:
+        raise ValueError("verify path requires at least one token")
+    if query_len == 1:
+        return run_semantic_stack_decode_from_hidden(
+            runtime,
+            hidden_states,
+            kv_cache,
+            position_cache=position_cache,
+        )
+
+    past_len = kv_cache.get_seq_length()
+    total_len = past_len + query_len
+    resolved_position_cache = position_cache or build_qwen_position_cache(
+        runtime.rope_inv_freq,
+        runtime.attention_scaling,
+        max_seq_len=total_len,
+        dtype=runtime.dtype,
+    )
+    position_embeddings = slice_qwen_position_embeddings(resolved_position_cache, start=past_len, length=query_len)
+    attention_mask = build_decode_attention_mask(query_len, total_len, runtime.device, runtime.dtype)
+    for layer in runtime.layers:
+        hidden_states = semantic_qwen_layer_forward(
+            config=runtime.config,
+            layer=layer,
+            rope_inv_freq=runtime.rope_inv_freq,
+            attention_scaling=runtime.attention_scaling,
+            hidden_states=hidden_states,
+            position_ids=None,
+            attention_mask=attention_mask,
+            kv_cache=kv_cache,
+            position_embeddings=position_embeddings,
+        )
+    return hidden_states, kv_cache
+
+
 def run_stack_decode(
     runtime: QwenStackRuntime,
     input_ids: torch.LongTensor,
@@ -1710,6 +1761,18 @@ def project_semantic_hidden_to_logits(
     return torch.mv(runtime.lm_head_weight, last_hidden).view(1, 1, -1)
 
 
+def project_semantic_hidden_to_logits_with_projection(
+    runtime: QwenSemanticStackRuntime,
+    hidden_states: torch.Tensor,
+    projection_weight: torch.Tensor,
+) -> torch.Tensor:
+    if runtime.final_norm_weight is None or runtime.lm_head_weight is None:
+        raise ValueError("runtime does not include model.norm and lm_head")
+    last_hidden = torch.mv(projection_weight, last_hidden_vector(hidden_states))
+    last_hidden = qwen_rmsnorm_vector(last_hidden, runtime.final_norm_weight, runtime.config.rms_norm_eps)
+    return torch.mv(runtime.lm_head_weight, last_hidden).view(1, 1, -1)
+
+
 def select_semantic_greedy_token_cutile(
     runtime: QwenSemanticStackRuntime,
     hidden_states: torch.Tensor,
@@ -1741,6 +1804,39 @@ def select_semantic_greedy_token(
                 raise
     return _semantic_greedy_head_vector(
         last_hidden_vector(hidden_states),
+        runtime.final_norm_weight,
+        runtime.lm_head_weight,
+        runtime.config.rms_norm_eps,
+    )
+
+
+def select_semantic_greedy_token_with_projection(
+    runtime: QwenSemanticStackRuntime,
+    hidden_states: torch.Tensor,
+    projection_weight: torch.Tensor,
+) -> torch.LongTensor:
+    projected_hidden = torch.mv(projection_weight, last_hidden_vector(hidden_states))
+    if runtime.final_norm_weight is None or runtime.lm_head_weight is None:
+        raise ValueError("runtime does not include model.norm and lm_head")
+    backend = resolve_semantic_logits_backend()
+    if backend in {"auto", "cutile"} and hidden_states.device.type == "cuda":
+        try:
+            normalized_hidden = qwen_rmsnorm_vector(
+                projected_hidden,
+                runtime.final_norm_weight,
+                runtime.config.rms_norm_eps,
+            )
+            try:
+                from .cutile_logits import cutile_logits_argmax
+            except ImportError:
+                logits = torch.mv(runtime.lm_head_weight, normalized_hidden)
+                return logits.argmax(dim=0, keepdim=True).view(1, 1)
+            return cutile_logits_argmax(normalized_hidden, runtime.lm_head_weight)
+        except Exception:
+            if backend == "cutile":
+                raise
+    return _semantic_greedy_head_vector(
+        projected_hidden,
         runtime.final_norm_weight,
         runtime.lm_head_weight,
         runtime.config.rms_norm_eps,

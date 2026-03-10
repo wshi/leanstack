@@ -42,6 +42,12 @@ class StaticKVCacheSnapshot:
     max_layer_seq_len: int
 
 
+@dataclass(frozen=True)
+class StaticKVCursorSnapshot:
+    layer_seq_lens: tuple[int, ...]
+    max_layer_seq_len: int
+
+
 class KVBlockManager:
     def __init__(self, layout: KVPageLayout):
         self.layout = layout
@@ -288,3 +294,25 @@ class StaticKVBlockManager:
         self.value_cache.copy_(snapshot.value_cache)
         self.layer_seq_lens = list(snapshot.layer_seq_lens)
         self.max_layer_seq_len = int(snapshot.max_layer_seq_len)
+
+    def snapshot_cursor(self) -> StaticKVCursorSnapshot:
+        return StaticKVCursorSnapshot(
+            layer_seq_lens=tuple(int(length) for length in self.layer_seq_lens),
+            max_layer_seq_len=int(self.max_layer_seq_len),
+        )
+
+    def restore_cursor(self, snapshot: StaticKVCursorSnapshot) -> None:
+        self.layer_seq_lens = list(snapshot.layer_seq_lens)
+        self.max_layer_seq_len = int(snapshot.max_layer_seq_len)
+
+    def cursor_after_tokens(
+        self,
+        snapshot: StaticKVCursorSnapshot,
+        token_count: int,
+    ) -> StaticKVCursorSnapshot:
+        if token_count < 0:
+            raise ValueError("token_count must be non-negative")
+        return StaticKVCursorSnapshot(
+            layer_seq_lens=tuple(int(length) + token_count for length in snapshot.layer_seq_lens),
+            max_layer_seq_len=int(snapshot.max_layer_seq_len) + token_count,
+        )

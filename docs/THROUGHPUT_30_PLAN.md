@@ -109,18 +109,40 @@ Initial smoke results on a short `16-token` decode:
   - acceptance ratio: about `36.8%`
   - committed tokens per cycle: about `1.60`
 
+After adding:
+
+- block verifier execution instead of token-by-token verifier decode
+- auxiliary draft heads packed into `leanpack`
+- cursor-only cache rollback
+
+the exact-bucket `decode_64_256` results are now:
+
+- `draft=24`, `k=2`, auxiliary head:
+  - acceptance ratio: about `90.7%`
+  - committed tokens per cycle: about `2.81`
+  - throughput: about `40.8 tok/s`
+- `draft=24`, `k=4`, auxiliary head:
+  - acceptance ratio: `100%`
+  - committed tokens per cycle: about `4.92`
+  - throughput: about `43.9 tok/s`
+- decode-calibrated shallow draft heads still remain weak on the main profile:
+  - `draft=8`, `k=2`: about `25.7 tok/s`
+  - `draft=12`, `k=2`: about `16.8 tok/s`
+  - `draft=16`, `k=2`: about `16.1 tok/s`
+
 Interpretation:
 
 - the loop works
-- the current untrained early-exit draft is too weak to justify a `30%` target
-- deeper drafts help, but not enough yet
+- block verification materially improved the speculative path
+- but even a perfect-acceptance `24+4` split is still slower than the packed non-spec appliance
+- the repo now has evidence that "split one model into draft+verifier" is not enough for a `30%` target on this workload
 
 So the next speculative work is not "optimize this exact draft harder."
 
 It is:
 
-- improve draft quality without losing the one-model appliance thesis
-- or accept that a stronger draft path is required than simple shared-head early exit
+- accept that a stronger asymmetry is required than a same-model prefix/suffix split
+- move toward a genuinely smaller draft artifact or draft model, still fixed to the same workload contract
 
 ## Official strategy
 
@@ -160,44 +182,20 @@ Principle:
 - do not introduce an unrelated second model first
 - exploit the fixed `Qwen3-1.7B-Base` contract itself
 
-Recommended first design:
+First implementation result:
 
-- early-exit self-speculative decode
-- one packed artifact
-- two resident execution graphs:
-  - `draft graph`
-  - `verify graph`
+- early-exit self-speculative decode with a prefix-layer draft and suffix verifier is now implemented and benchmarked
+- it is a useful control experiment, but not a sufficient final design
 
-The draft graph should use a proper prefix of the full network, for example:
+Why the repo now needs a different speculative design:
 
-- layers `0..11`
-- or layers `0..15`
-- or another empirically selected split
+- with a same-model split, every committed token still pays for the draft layers plus the verifier layers
+- block verification improves GPU efficiency, but it does not remove the full-model layer budget
+- once the `24+4` split reaches `100%` acceptance and still trails the packed non-spec path, the remaining headroom is too small for a `30%` target
 
-The verify graph should:
+So the next design candidate should be:
 
-- run the remaining layers needed to validate the proposal block
-- preserve exact output equivalence to the base model
-
-Why this matches the repo thesis:
-
-- one semantic contract
-- one base checkpoint
-- one GPU
-- one packed artifact family
-- agent-generated code specialized to one model and one machine
-
-This is a better fit than introducing a generic draft-model stack.
-
-But the first smoke data now adds a constraint:
-
-- simple prefix-layer early exit plus the shared final head is probably not enough
-
-So the next design candidates should be:
-
-- a trained or distilled early-exit head for the draft path
-- a tiny auxiliary draft head packed into `leanpack`
-- or a second packed draft artifact that remains fixed to the same Qwen/GB10 appliance contract
+- a second packed draft artifact that is genuinely smaller than the verifier model, while remaining fixed to the same Qwen/GB10 appliance contract
 
 ## Leanpack v1.5 requirements
 
