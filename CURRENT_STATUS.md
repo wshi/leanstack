@@ -758,4 +758,118 @@ UI 内部有 operation lock：
 - 保持 verifier 为 full packed appliance
 - 用真实 FLOP asymmetry 去换 `+30%`
 
+## 18. Phase 8: 双模型 speculative decode（当前开发中）
+
+### 第一性原理分析
+
+decode 的根本瓶颈是 **显存带宽**：每生成一个 token 需要读取全部模型权重。
+
+- 模型权重: ~3.4 GB (1.7B BF16)
+- GB10 带宽: ~273 GB/s
+- 理论上限: 273 / 3.4 ≈ 80 tok/s
+- 当前实际: ~46 tok/s → 57.5% 带宽利用率
+- +30% 目标: ~60 tok/s → 75% 带宽利用率
+
+same-model speculative 失败的根本原因：draft 用了 24/28 层，成本是全模型的 86%，
+没有真正的 FLOP asymmetry。即使 acceptance=100%，每个 cycle 的开销几乎等于标准 decode。
+
+### 解决方案：Qwen3-0.6B 作为 external draft model
+
+选择 `Qwen/Qwen3-0.6B-Base` 作为 draft model：
+
+- ~1.2 GB 权重（全模型的 35%）→ ~7.6ms per draft token
+- 与 1.7B 共享 vocabulary / tokenizer → token 直接兼容
+- 不需要 projection head — 每个模型有自己完整的 LM head
+- 不需要训练或微调
+
+### 吞吐预测
+
+验证步骤的关键洞察：verification 是 bandwidth-bound，k 个 token 的 verify 成本
+约等于 1 次 decode（读取相同的权重，只是多了 k 倍算术，但算力远未饱和）。
+
+```
+k=5, acceptance=70%:
+  Draft:  5 × 7.6ms = 38.0ms
+  Verify: 1 × 21.7ms = 21.7ms
+  Total:  59.7ms for 4.5 tokens (5×0.7 + 1 bonus)
+  Throughput: 75.4 tok/s → +63% over vLLM
+
+k=4, acceptance=50% (pessimistic):
+  Draft:  4 × 7.6ms = 30.4ms
+  Verify: 1 × 21.7ms = 21.7ms
+  Total:  52.1ms for 3.0 tokens
+  Throughput: 57.6 tok/s → +25%
+```
+
+### 实现方案
+
+代码已实现但待远端验证：
+
+1. **新增 `run_semantic_stack_verify_tokens`** (`src/leanstack/runtime/qwen_explicit.py`)
+   - 接收 raw token IDs，用 verifier 的 embedding table 嵌入并运行全层验证
+
+2. **新增 `run_dual_model_speculative_request`** (`experiments/models/qwen_explicit_runtime_loop.py`)
+   - 双模型独立 KV cache
+   - Draft phase: 0.6B 模型自回归生成 k 个 proposal tokens
+   - Verify phase: 1.7B 模型单次 forward 验证全部 k tokens
+   - Accept/reject + cache rollback
+
+3. **新增 `qwen-draft` model spec** (`src/leanstack/model_registry.py`)
+   - Qwen3-0.6B-Base 的 geometry 和 metadata
+
+4. **新增脚本**
+   - `scripts/remote_fetch_draft_model.sh` — 下载 draft model
+   - `scripts/remote_leanpack_build_draft.sh` — 打包 draft artifact
+   - `scripts/remote_dual_spec_benchmark.sh` — 运行双模型 speculative benchmark
+
+### 运行步骤
+
+#### 第一步：下载 draft model
+
+```bash
+./scripts/remote_fetch_draft_model.sh
+```
+
+#### 第二步：打包 draft artifact
+
+```bash
+./scripts/remote_leanpack_build_draft.sh
+```
+
+#### 第三步：运行双模型 speculative benchmark
+
+```bash
+# 默认 k=5
+./scripts/remote_dual_spec_benchmark.sh
+
+# 自定义 proposal length
+PROPOSAL_LEN=8 ./scripts/remote_dual_spec_benchmark.sh
+```
+
+#### 也可以通过 runtime loop 直接跑
+
+```bash
+MODEL_ID=Qwen/Qwen3-1.7B-Base \
+PACK_DIR=/home/pto/lean/packed/Qwen__Qwen3-1.7B-Base \
+DRAFT_PACK_DIR=/home/pto/lean/packed/Qwen__Qwen3-0.6B-Base \
+DUAL_MODEL_SPECULATIVE=1 \
+PROPOSAL_LEN=5 \
+RUNTIME_MODE=semantic \
+MAX_PREFILL_TOKENS=64 \
+MAX_NEW_TOKENS=256 \
+EXACT_PREFILL_BUCKET=1 \
+IGNORE_EOS=1 \
+./scripts/remote_qwen_runtime_loop.sh
+```
+
+### 与 same-model speculative 的关键区别
+
+| | same-model split | dual-model |
+|---|---|---|
+| Draft cost | 86% of verifier | 35% of verifier |
+| Hidden state sharing | Draft hidden → verifier | None (token-level interface) |
+| Projection head | Required (linear regression) | Not needed |
+| Acceptance rate | High (same model) | Medium (different model) |
+| Net throughput gain | ≤0% (proven insufficient) | Predicted +30-60% |
+
 这就是到 2026-03-10 为止，`leanstack` 的真实状态。

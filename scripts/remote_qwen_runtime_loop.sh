@@ -23,6 +23,8 @@ EXACT_PREFILL_BUCKET="${EXACT_PREFILL_BUCKET:-0}"
 IGNORE_EOS="${IGNORE_EOS:-0}"
 SKIP_FINAL_CACHE_ADVANCE="${SKIP_FINAL_CACHE_ADVANCE:-0}"
 SPECULATIVE="${SPECULATIVE:-0}"
+DUAL_MODEL_SPECULATIVE="${DUAL_MODEL_SPECULATIVE:-0}"
+DRAFT_PACK_DIR="${DRAFT_PACK_DIR:-}"
 DRAFT_LAYER_COUNT="${DRAFT_LAYER_COUNT:-12}"
 PROPOSAL_LEN="${PROPOSAL_LEN:-4}"
 DRAFT_HEAD_KEY="${DRAFT_HEAD_KEY:-}"
@@ -48,6 +50,8 @@ if [[ \"$IGNORE_EOS\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --ignore-eos\"
 if [[ \"$SKIP_FINAL_CACHE_ADVANCE\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --skip-final-cache-advance\"; fi; \
 if [[ -n \"$PACK_DIR\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --pack-dir $PACK_DIR\"; fi; \
 if [[ \"$SPECULATIVE\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --speculative --draft-layer-count $DRAFT_LAYER_COUNT --proposal-len $PROPOSAL_LEN\"; fi; \
+if [[ \"$DUAL_MODEL_SPECULATIVE\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --dual-model-speculative --proposal-len $PROPOSAL_LEN\"; fi; \
+if [[ -n \"$DRAFT_PACK_DIR\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --draft-pack-dir $DRAFT_PACK_DIR\"; fi; \
 if [[ -n \"$DRAFT_HEAD_KEY\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --draft-head-key $DRAFT_HEAD_KEY\"; fi; \
 if [[ \"$COMPILE\" == \"1\" ]]; then EXTRA_ARGS=\"\$EXTRA_ARGS --compile --compile-mode $COMPILE_MODE\"; fi; \
 python3 /home/pto/lean/repo/experiments/models/qwen_explicit_runtime_loop.py --model-path \"\$MODEL_REF\" --runtime-mode \"$RUNTIME_MODE\" --num-layers \"$NUM_LAYERS\" --device \"$DEVICE\" --prompt \"$PROMPT\" --prompt-format \"$PROMPT_FORMAT\" --max-prefill-tokens \"$MAX_PREFILL_TOKENS\" --max-new-tokens \"$MAX_NEW_TOKENS\" --page-size \"$PAGE_SIZE\" \$EXTRA_ARGS"

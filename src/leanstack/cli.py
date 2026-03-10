@@ -149,7 +149,7 @@ def handle_build_leanpack(args: argparse.Namespace) -> int:
     from .pack import build_qwen_leanpack
 
     spec = get_model_spec(args.model)
-    if spec.key != "qwen":
+    if not spec.key.startswith("qwen"):
         raise ValueError(f"leanpack builder not implemented for model={spec.key}")
     manifest = build_qwen_leanpack(
         model=spec,

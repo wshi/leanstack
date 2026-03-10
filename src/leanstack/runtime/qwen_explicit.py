@@ -1716,6 +1716,28 @@ def run_semantic_stack_verify_from_hidden(
     return hidden_states, kv_cache
 
 
+def run_semantic_stack_verify_tokens(
+    runtime: QwenSemanticStackRuntime,
+    input_ids: torch.LongTensor,
+    kv_cache: KVCacheManager,
+    position_cache: tuple[torch.Tensor, torch.Tensor] | None = None,
+) -> tuple[torch.Tensor, KVCacheManager]:
+    """Verify multiple tokens at once by embedding them and running through all layers.
+
+    This is used by dual-model speculative decode: the verifier takes raw token IDs
+    (produced by an external draft model), embeds them with its own embedding table,
+    and processes them through all layers with a causal attention mask.
+    """
+    input_ids = input_ids.to(runtime.device)
+    hidden_states = F.embedding(input_ids, runtime.embed_tokens_weight)
+    return run_semantic_stack_verify_from_hidden(
+        runtime,
+        hidden_states,
+        kv_cache,
+        position_cache=position_cache,
+    )
+
+
 def run_stack_decode(
     runtime: QwenStackRuntime,
     input_ids: torch.LongTensor,
