@@ -773,36 +773,35 @@ def run_dual_model_speculative_request(
             speculative_summary["proposed_tokens"] += len(proposed_ids)
 
             # --- VERIFY PHASE ---
-            # Feed [current_token, d1, d2, ..., d_{k-1}] to verifier in one pass.
-            # The verifier's output at position i predicts what should follow.
-            # We only need to verify the k draft tokens, so we feed k tokens total:
+            # Feed [current_token, d1, d2, ..., d_k] to verifier in one pass.
+            # The verifier's output at position i predicts what should follow:
             # current_token → verifier predicts v1 (should match d1)
             # d1 → verifier predicts v2 (should match d2)
             # ...
-            # d_{k-1} → verifier predicts v_k (bonus token if all accepted)
+            # d_{k-1} → verifier predicts v_k (should match d_k)
+            # d_k → verifier predicts bonus token (free extra if all accepted)
+            #
+            # This single batch replaces what was previously two separate passes
+            # (verify batch + bonus decode), saving one full verifier forward pass.
             verify_input_ids = torch.tensor(
-                [[int(current_token.item())] + proposed_ids[:-1]],
+                [[int(current_token.item())] + proposed_ids],
                 device=device,
                 dtype=torch.long,
-            ) if len(proposed_ids) > 1 else current_token
+            )
 
-            # Single-token case: just decode one token
-            if verify_input_ids.shape[-1] == 1:
-                verifier_hidden_block, verifier_cache = run_semantic_stack_decode(
-                    verifier_runtime,
-                    verify_input_ids,
-                    verifier_cache,
-                    position_cache=verifier_position_cache,
-                )
-            else:
-                verifier_hidden_block, verifier_cache = run_semantic_stack_verify_tokens(
-                    verifier_runtime,
-                    verify_input_ids,
-                    verifier_cache,
-                    position_cache=verifier_position_cache,
-                )
+            # Single-token case (cycle_proposal_len == 1, verify_input_ids has 2 tokens):
+            # always use verify_tokens path since we have at least 2 tokens
+            verifier_hidden_block, verifier_cache = run_semantic_stack_verify_tokens(
+                verifier_runtime,
+                verify_input_ids,
+                verifier_cache,
+                position_cache=verifier_position_cache,
+            )
 
-            # Extract verifier predictions at each position
+            # Extract verifier predictions at each position.
+            # verifier_tokens[i] for i in 0..k corresponds to predictions after
+            # position i in the input sequence. We need k+1 predictions total:
+            # k predictions to verify proposals + 1 bonus prediction.
             verifier_tokens: list[int] = []
             seq_dim = verifier_hidden_block.shape[1]
             for pos in range(seq_dim):
@@ -811,22 +810,6 @@ def run_dual_model_speculative_request(
                     verifier_hidden_block[:, pos:pos + 1, :],
                 )
                 verifier_tokens.append(int(v_token.item()))
-
-            # We also need the verifier's prediction for the last proposed token.
-            # Feed the last proposed token to get the bonus/next prediction.
-            last_proposed_token = torch.tensor(
-                [[proposed_ids[-1]]],
-                device=device,
-                dtype=torch.long,
-            )
-            verifier_last_hidden, verifier_cache = run_semantic_stack_decode(
-                verifier_runtime,
-                last_proposed_token,
-                verifier_cache,
-                position_cache=verifier_position_cache,
-            )
-            verifier_last_token = select_semantic_greedy_token(verifier_runtime, verifier_last_hidden)
-            verifier_tokens.append(int(verifier_last_token.item()))
 
             # --- ACCEPT/REJECT ---
             # verifier_tokens[i] is the verifier's prediction for position i
@@ -845,17 +828,15 @@ def run_dual_model_speculative_request(
 
                     # Rollback both caches.
                     # The next cycle will feed current_token to both models,
-                    # so we need caches at: base + proposal_idx accepted tokens
-                    # (which means: base for draft, base for verifier, plus the
-                    # tokens that were correctly accepted in the verify batch).
+                    # so we need caches at: base + current_token + accepted proposals.
                     #
-                    # Draft was advanced by: current_token + d₁ + ... + d_k
+                    # Draft was advanced by: current_token + d₁ + ... + d_k (k+1 decode steps)
                     # We want it at: base + current_token + d₁ + ... + d_{i-1}
-                    # That is draft_snapshots[proposal_idx] (after processing current_token + accepted proposals)
+                    # That is draft_snapshots[proposal_idx] (snapshot after processing current_token + i accepted)
                     draft_cache.restore_cursor(draft_snapshots[proposal_idx])
 
-                    # Verifier was advanced by: [current_token, d₁, ..., d_{k-1}] + d_k
-                    # We want it at: base + current_token + d₁ + ... + d_{i-1}
+                    # Verifier was advanced by: [current_token, d₁, ..., d_k] in one batch (k+1 tokens)
+                    # We want it at: base + current_token + d₁ + ... + d_{i-1} = base + 1 + proposal_idx
                     verifier_cache.restore_cursor(
                         verifier_cache.cursor_after_tokens(verifier_base_snapshot, 1 + proposal_idx)
                     )
