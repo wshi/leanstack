@@ -29,6 +29,7 @@ from leanstack.runtime.qwen_explicit import (
     run_semantic_stack_prefill_from_hidden,
     run_semantic_stack_prefill,
     run_semantic_stack_verify_from_hidden,
+    run_semantic_stack_verify_tokens,
     run_stack_decode,
     run_stack_prefill,
     select_semantic_greedy_token_with_projection,
@@ -54,6 +55,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-new-tokens", type=int, default=8)
     parser.add_argument("--page-size", type=int, default=16)
     parser.add_argument("--speculative", action="store_true", help="Enable exact self-speculative decode.")
+    parser.add_argument("--dual-model-speculative", action="store_true",
+                        help="Enable dual-model speculative decode (external draft model).")
+    parser.add_argument("--draft-pack-dir", default="",
+                        help="Leanpack artifact directory for the external draft model.")
     parser.add_argument("--draft-layer-count", type=int, default=12)
     parser.add_argument("--proposal-len", type=int, default=4)
     parser.add_argument("--draft-head-key", default="")
@@ -226,6 +231,30 @@ def materialize_speculative_runtimes(args: argparse.Namespace):
         dtype=args.dtype,
     )
     return draft_runtime, verifier_runtime, draft_projection
+
+
+def materialize_dual_model_speculative_runtimes(args: argparse.Namespace):
+    """Materialize draft and verifier as two completely separate models."""
+    if args.runtime_mode != "semantic":
+        raise ValueError("--dual-model-speculative requires --runtime-mode semantic")
+    if not args.pack_dir:
+        raise ValueError("--dual-model-speculative requires --pack-dir (verifier)")
+    if not args.draft_pack_dir:
+        raise ValueError("--dual-model-speculative requires --draft-pack-dir")
+
+    draft_runtime = materialize_qwen_full_semantic_runtime_from_leanpack(
+        args.draft_pack_dir,
+        device=args.device,
+        dtype=args.dtype,
+        include_output_head=True,
+    )
+    verifier_runtime = materialize_qwen_full_semantic_runtime_from_leanpack(
+        args.pack_dir,
+        device=args.device,
+        dtype=args.dtype,
+        include_output_head=True,
+    )
+    return draft_runtime, verifier_runtime
 
 
 def select_borrowed_greedy_token(runtime, hidden_states: torch.Tensor) -> torch.LongTensor:
@@ -619,6 +648,274 @@ def run_speculative_request(
     }
 
 
+def run_dual_model_speculative_request(
+    *,
+    draft_runtime,
+    verifier_runtime,
+    tokenizer,
+    input_ids: torch.LongTensor,
+    device: torch.device,
+    page_size: int,
+    max_new_tokens: int,
+    proposal_len: int,
+    stop_token_ids: tuple[int, ...],
+) -> dict:
+    """Dual-model speculative decode: external draft model + full verifier.
+
+    The draft model (e.g. Qwen3-0.6B) generates k proposal tokens autoregressively.
+    The verifier (e.g. Qwen3-1.7B) checks all k proposals in a single forward pass.
+
+    Key insight: verification of k tokens ≈ cost of 1 decode step (bandwidth-bound),
+    so throughput scales with draft model speed and acceptance rate.
+    """
+    if proposal_len <= 0:
+        raise ValueError("proposal_len must be positive")
+
+    generated_ids: list[int] = []
+    stop_reason = "max_new_tokens"
+    timings: dict[str, float | list[float]] = {}
+    speculative_summary = {
+        "mode": "dual_model",
+        "draft_layers": len(draft_runtime.layer_indices),
+        "verifier_layers": len(verifier_runtime.layer_indices),
+        "draft_hidden_size": int(draft_runtime.config.hidden_size),
+        "verifier_hidden_size": int(verifier_runtime.config.hidden_size),
+        "proposal_len": proposal_len,
+        "cycles": 0,
+        "proposed_tokens": 0,
+        "accepted_proposal_tokens": 0,
+        "rejected_proposal_tokens": 0,
+        "bonus_tokens": 0,
+        "accepted_tokens_per_cycle": [],
+    }
+    stop_token_set = set(stop_token_ids)
+    max_seq_len = int(input_ids.shape[-1]) + max_new_tokens + proposal_len + 1
+
+    draft_position_cache = build_qwen_position_cache(
+        draft_runtime.rope_inv_freq,
+        draft_runtime.attention_scaling,
+        max_seq_len=max_seq_len,
+        dtype=draft_runtime.dtype,
+    )
+    verifier_position_cache = build_qwen_position_cache(
+        verifier_runtime.rope_inv_freq,
+        verifier_runtime.attention_scaling,
+        max_seq_len=max_seq_len,
+        dtype=verifier_runtime.dtype,
+    )
+
+    with torch.inference_mode():
+        sync_device(device)
+        start = time.perf_counter()
+
+        # Prefill both models independently on the same prompt
+        draft_hidden, draft_cache = run_semantic_stack_prefill(
+            draft_runtime,
+            input_ids,
+            page_size=page_size,
+            max_seq_len=max_seq_len,
+            position_cache=draft_position_cache,
+        )
+        verifier_hidden, verifier_cache = run_semantic_stack_prefill(
+            verifier_runtime,
+            input_ids,
+            page_size=page_size,
+            max_seq_len=max_seq_len,
+            position_cache=verifier_position_cache,
+        )
+        if not isinstance(draft_cache, StaticKVBlockManager) or not isinstance(verifier_cache, StaticKVBlockManager):
+            raise TypeError("dual-model speculative path requires StaticKVBlockManager caches")
+
+        # First token comes from the verifier (ground truth)
+        current_token = select_semantic_greedy_token(verifier_runtime, verifier_hidden)
+
+        sync_device(device)
+        timings["prefill_seconds"] = time.perf_counter() - start
+
+        sync_device(device)
+        loop_start = time.perf_counter()
+
+        while len(generated_ids) < max_new_tokens:
+            speculative_summary["cycles"] += 1
+            remaining_tokens = max_new_tokens - len(generated_ids)
+            cycle_proposal_len = min(proposal_len, remaining_tokens)
+
+            # Snapshot both caches for potential rollback
+            draft_base_snapshot = draft_cache.snapshot_cursor()
+            verifier_base_snapshot = verifier_cache.snapshot_cursor()
+
+            # --- DRAFT PHASE ---
+            # Feed current_token into draft model, then generate k proposals autoregressively
+            draft_hidden, draft_cache = run_semantic_stack_decode(
+                draft_runtime,
+                current_token,
+                draft_cache,
+                position_cache=draft_position_cache,
+            )
+            draft_snapshots = [draft_cache.snapshot_cursor()]
+            proposed_ids: list[int] = []
+
+            first_draft_token = select_semantic_greedy_token(draft_runtime, draft_hidden)
+            proposed_ids.append(int(first_draft_token.item()))
+
+            draft_token = first_draft_token
+            for _ in range(cycle_proposal_len - 1):
+                draft_hidden, draft_cache = run_semantic_stack_decode(
+                    draft_runtime,
+                    draft_token,
+                    draft_cache,
+                    position_cache=draft_position_cache,
+                )
+                draft_snapshots.append(draft_cache.snapshot_cursor())
+                draft_token = select_semantic_greedy_token(draft_runtime, draft_hidden)
+                proposed_ids.append(int(draft_token.item()))
+
+            speculative_summary["proposed_tokens"] += len(proposed_ids)
+
+            # --- VERIFY PHASE ---
+            # Feed [current_token, d1, d2, ..., d_k] to verifier in one pass.
+            # The verifier's output at position i predicts what should follow:
+            # current_token → verifier predicts v1 (should match d1)
+            # d1 → verifier predicts v2 (should match d2)
+            # ...
+            # d_{k-1} → verifier predicts v_k (should match d_k)
+            # d_k → verifier predicts bonus token (free extra if all accepted)
+            #
+            # This single batch replaces what was previously two separate passes
+            # (verify batch + bonus decode), saving one full verifier forward pass.
+            verify_input_ids = torch.tensor(
+                [[int(current_token.item())] + proposed_ids],
+                device=device,
+                dtype=torch.long,
+            )
+
+            # Single-token case (cycle_proposal_len == 1, verify_input_ids has 2 tokens):
+            # always use verify_tokens path since we have at least 2 tokens
+            verifier_hidden_block, verifier_cache = run_semantic_stack_verify_tokens(
+                verifier_runtime,
+                verify_input_ids,
+                verifier_cache,
+                position_cache=verifier_position_cache,
+            )
+
+            # Extract verifier predictions at each position.
+            # verifier_tokens[i] for i in 0..k corresponds to predictions after
+            # position i in the input sequence. We need k+1 predictions total:
+            # k predictions to verify proposals + 1 bonus prediction.
+            verifier_tokens: list[int] = []
+            seq_dim = verifier_hidden_block.shape[1]
+            for pos in range(seq_dim):
+                v_token = select_semantic_greedy_token(
+                    verifier_runtime,
+                    verifier_hidden_block[:, pos:pos + 1, :],
+                )
+                verifier_tokens.append(int(v_token.item()))
+
+            # --- ACCEPT/REJECT ---
+            # verifier_tokens[i] is the verifier's prediction for position i
+            # proposed_ids[i] is the draft's token for position i
+            # We accept if proposed_ids[i] == verifier_tokens[i]
+            accepted_this_cycle = 0
+            cycle_committed: list[int] = []
+            mismatch = False
+
+            for proposal_idx, proposal_id in enumerate(proposed_ids):
+                exact_token = verifier_tokens[proposal_idx]
+                if proposal_id != exact_token:
+                    mismatch = True
+                    speculative_summary["rejected_proposal_tokens"] += len(proposed_ids) - proposal_idx
+                    cycle_committed.append(exact_token)
+
+                    # Rollback both caches.
+                    # The next cycle will feed current_token to both models,
+                    # so we need caches at: base + current_token + accepted proposals.
+                    #
+                    # Draft was advanced by: current_token + d₁ + ... + d_k (k+1 decode steps)
+                    # We want it at: base + current_token + d₁ + ... + d_{i-1}
+                    # That is draft_snapshots[proposal_idx] (snapshot after processing current_token + i accepted)
+                    draft_cache.restore_cursor(draft_snapshots[proposal_idx])
+
+                    # Verifier was advanced by: [current_token, d₁, ..., d_k] in one batch (k+1 tokens)
+                    # We want it at: base + current_token + d₁ + ... + d_{i-1} = base + 1 + proposal_idx
+                    verifier_cache.restore_cursor(
+                        verifier_cache.cursor_after_tokens(verifier_base_snapshot, 1 + proposal_idx)
+                    )
+
+                    # Set current_token to the verifier's correction.
+                    # The next cycle will feed it to both draft and verifier.
+                    current_token = torch.tensor([[exact_token]], device=device, dtype=torch.long)
+                    break
+
+                cycle_committed.append(proposal_id)
+                accepted_this_cycle += 1
+                speculative_summary["accepted_proposal_tokens"] += 1
+
+            if not mismatch:
+                # All proposals accepted! Get bonus token from verifier.
+                bonus_token_id = verifier_tokens[len(proposed_ids)]
+                if len(generated_ids) + len(cycle_committed) < max_new_tokens:
+                    cycle_committed.append(bonus_token_id)
+                    speculative_summary["bonus_tokens"] += 1
+
+                # Set current_token to bonus. The next cycle will feed it to both models.
+                current_token = torch.tensor([[bonus_token_id]], device=device, dtype=torch.long)
+
+            # Emit committed tokens
+            emitted_this_cycle = 0
+            for token_id in cycle_committed:
+                if len(generated_ids) >= max_new_tokens:
+                    break
+                generated_ids.append(int(token_id))
+                emitted_this_cycle += 1
+                if stop_token_set and token_id in stop_token_set:
+                    stop_reason = "stop_token"
+                    break
+            speculative_summary["accepted_tokens_per_cycle"].append(emitted_this_cycle)
+            if stop_reason == "stop_token":
+                break
+
+        sync_device(device)
+        timings["decode_loop_seconds"] = time.perf_counter() - loop_start
+        timings["final_cache_advance_seconds"] = 0.0
+
+    runtime_loop_seconds = float(timings["prefill_seconds"]) + float(timings["decode_loop_seconds"])
+    full_loop_seconds = runtime_loop_seconds
+    cycle_count = int(speculative_summary["cycles"])
+    accepted_proposals = int(speculative_summary["accepted_proposal_tokens"])
+    proposed_tokens = int(speculative_summary["proposed_tokens"])
+    speculative_summary["acceptance_ratio"] = (
+        float(accepted_proposals / proposed_tokens) if proposed_tokens > 0 else None
+    )
+    speculative_summary["committed_tokens_per_cycle"] = (
+        float(len(generated_ids) / cycle_count) if cycle_count > 0 else None
+    )
+
+    return {
+        "generated_token_ids": list(generated_ids),
+        "generated_text": tokenizer.decode(generated_ids, skip_special_tokens=True),
+        "cache_seq_length": int(verifier_cache.get_seq_length()),
+        "cache_summary": {
+            "draft": draft_cache.summary(),
+            "verifier": verifier_cache.summary(),
+        },
+        "final_cache_advanced": False,
+        "decode_steps_executed": 0,
+        "stop_reason": stop_reason,
+        "emitted_tokens": len(generated_ids),
+        "timings": {
+            **timings,
+            "runtime_loop_seconds": runtime_loop_seconds,
+            "full_loop_seconds": full_loop_seconds,
+            "decode_step_seconds": [],
+        },
+        "throughput": {
+            "runtime_tokens_per_second": (len(generated_ids) / runtime_loop_seconds) if runtime_loop_seconds > 0 else None,
+            "full_loop_tokens_per_second": (len(generated_ids) / full_loop_seconds) if full_loop_seconds > 0 else None,
+        },
+        "speculative_summary": speculative_summary,
+    }
+
+
 def average_request_metrics(requests: list[dict]) -> dict:
     if not requests:
         raise ValueError("expected at least one measured request")
@@ -662,8 +959,14 @@ def main() -> int:
         raise ValueError("--warmup-requests must be non-negative")
     if args.proposal_len <= 0:
         raise ValueError("--proposal-len must be positive")
+    if args.speculative and args.dual_model_speculative:
+        raise ValueError("--speculative and --dual-model-speculative are mutually exclusive")
     if args.speculative and args.capture_decode_step_timings:
         raise ValueError("--capture-decode-step-timings is not supported with --speculative")
+    if args.dual_model_speculative and args.capture_decode_step_timings:
+        raise ValueError("--capture-decode-step-timings is not supported with --dual-model-speculative")
+
+    is_speculative = args.speculative or args.dual_model_speculative
 
     device = torch.device(args.device)
     if device.type == "cuda":
@@ -681,7 +984,13 @@ def main() -> int:
 
     sync_device(device)
     start = time.perf_counter()
-    if args.speculative:
+    draft_runtime = None
+    verifier_runtime = None
+    draft_projection = None
+    if args.dual_model_speculative:
+        draft_runtime, verifier_runtime = materialize_dual_model_speculative_runtimes(args)
+        runtime = verifier_runtime
+    elif args.speculative:
         draft_runtime, verifier_runtime, draft_projection = materialize_speculative_runtimes(args)
         runtime = verifier_runtime
     else:
@@ -699,7 +1008,7 @@ def main() -> int:
 
     compiled_decode = False
     compiled_select = False
-    if args.compile and not args.speculative:
+    if args.compile and not is_speculative:
         compiled_decode_fn = try_compile(decode_fn, mode=args.compile_mode)
         compiled_select_fn = try_compile(select_fn, mode=args.compile_mode)
         compiled_decode = compiled_decode_fn is not decode_fn
@@ -711,7 +1020,19 @@ def main() -> int:
     measured_results: list[dict] = []
     total_requests = args.warmup_requests + args.resident_requests
     for request_idx in range(total_requests):
-        if args.speculative:
+        if args.dual_model_speculative:
+            request_result = run_dual_model_speculative_request(
+                draft_runtime=draft_runtime,
+                verifier_runtime=verifier_runtime,
+                tokenizer=tokenizer,
+                input_ids=input_ids.to(device),
+                device=device,
+                page_size=args.page_size,
+                max_new_tokens=args.max_new_tokens,
+                proposal_len=args.proposal_len,
+                stop_token_ids=stop_token_ids,
+            )
+        elif args.speculative:
             request_result = run_speculative_request(
                 draft_runtime=draft_runtime,
                 verifier_runtime=verifier_runtime,
@@ -750,10 +1071,10 @@ def main() -> int:
 
     result = {
         "model_path": args.model_path,
-        "num_layers": int(runtime.config.num_hidden_layers) if args.speculative else len(runtime.layer_indices),
+        "num_layers": int(runtime.config.num_hidden_layers) if is_speculative else len(runtime.layer_indices),
         "layer_range": (
             [0, int(runtime.config.num_hidden_layers) - 1]
-            if args.speculative
+            if is_speculative
             else [runtime.layer_indices[0], runtime.layer_indices[-1]] if runtime.layer_indices else []
         ),
         "runtime_mode": args.runtime_mode,
@@ -766,8 +1087,10 @@ def main() -> int:
         "compile_mode": args.compile_mode if args.compile else None,
         "attn_implementation": runtime.config._attn_implementation,
         "speculative": bool(args.speculative),
+        "dual_model_speculative": bool(args.dual_model_speculative),
+        "draft_pack_dir": args.draft_pack_dir or None,
         "draft_layer_count": args.draft_layer_count if args.speculative else None,
-        "proposal_len": args.proposal_len if args.speculative else None,
+        "proposal_len": args.proposal_len if is_speculative else None,
         "draft_head_key": args.draft_head_key or None,
         "prompt_format": resolved_prompt_format,
         "exact_prefill_bucket": bool(args.exact_prefill_bucket),

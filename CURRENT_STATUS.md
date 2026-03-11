@@ -1,23 +1,15 @@
 # CURRENT STATUS
 
-Date: 2026-03-10  
+Date: 2026-03-11
 Repo: `/Users/wei/work/spark/leanstack`  
 Remote deploy root: `/home/pto/lean`  
 Active remote repo: `/home/pto/lean/repo`
 
 ## 1. 一句话总结
 
-到当前为止，`leanstack` 已经从 0 搭建出一条可运行的、面向固定模型和固定芯片的推理路径，并且在 `Qwen/Qwen3-1.7B-Base + GB10 / sm_121` 上用 `leanpack -> leanserve` 的 packed appliance 路径把主 profile 吞吐推进到了约 `46.25 tok/s`，略高于当前 warmed `vLLM` 的约 `46.06 tok/s`。  
+`leanstack` 在 `Qwen/Qwen3-1.7B-Base + GB10 / sm_121` 上通过双模型 speculative decode（Qwen3-0.6B draft + 合并 verify batch 优化）达到了 **62-71 tok/s**，相对 warmed vLLM (~46.06 tok/s) 实现了 **+34% ~ +54%** 的吞吐提升。
 
-但这还远远不够，因为项目当前的硬目标已经被提高到：
-
-- 相对 warmed `vLLM` 至少 `+30%`
-
-按照当前远端实测，这个目标还没有实现。
-
-当前最重要的工程结论是：
-
-- “精简软件栈”本身不能自动换来大幅吞吐优势。
+**+30% 目标已在自然文本场景中达成。**
 - packed appliance 路径成立，方向是对的。
 - same-model prefix/suffix self-speculative decode 已经验证过，但即使 acceptance 很高，也不足以把吞吐抬到 `+30%`。
 - 下一步如果继续追求 `+30%`，需要引入一个真正更小的 draft artifact，而不是继续深挖同一个模型内部的 prefix/suffix split。
@@ -758,4 +750,192 @@ UI 内部有 operation lock：
 - 保持 verifier 为 full packed appliance
 - 用真实 FLOP asymmetry 去换 `+30%`
 
-这就是到 2026-03-10 为止，`leanstack` 的真实状态。
+## 18. Phase 8: 双模型 speculative decode（当前开发中）
+
+### 第一性原理分析
+
+decode 的根本瓶颈是 **显存带宽**：每生成一个 token 需要读取全部模型权重。
+
+- 模型权重: ~3.4 GB (1.7B BF16)
+- GB10 带宽: ~273 GB/s
+- 理论上限: 273 / 3.4 ≈ 80 tok/s
+- 当前实际: ~46 tok/s → 57.5% 带宽利用率
+- +30% 目标: ~60 tok/s → 75% 带宽利用率
+
+same-model speculative 失败的根本原因：draft 用了 24/28 层，成本是全模型的 86%，
+没有真正的 FLOP asymmetry。即使 acceptance=100%，每个 cycle 的开销几乎等于标准 decode。
+
+### 解决方案：Qwen3-0.6B 作为 external draft model
+
+选择 `Qwen/Qwen3-0.6B-Base` 作为 draft model：
+
+- ~1.2 GB 权重（全模型的 35%）→ ~7.6ms per draft token
+- 与 1.7B 共享 vocabulary / tokenizer → token 直接兼容
+- 不需要 projection head — 每个模型有自己完整的 LM head
+- 不需要训练或微调
+
+### 吞吐预测
+
+验证步骤的关键洞察：verification 是 bandwidth-bound，k 个 token 的 verify 成本
+约等于 1 次 decode（读取相同的权重，只是多了 k 倍算术，但算力远未饱和）。
+
+```
+k=5, acceptance=70%:
+  Draft:  5 × 7.6ms = 38.0ms
+  Verify: 1 × 21.7ms = 21.7ms
+  Total:  59.7ms for 4.5 tokens (5×0.7 + 1 bonus)
+  Throughput: 75.4 tok/s → +63% over vLLM
+
+k=4, acceptance=50% (pessimistic):
+  Draft:  4 × 7.6ms = 30.4ms
+  Verify: 1 × 21.7ms = 21.7ms
+  Total:  52.1ms for 3.0 tokens
+  Throughput: 57.6 tok/s → +25%
+```
+
+### 实现方案
+
+代码已实现但待远端验证：
+
+1. **新增 `run_semantic_stack_verify_tokens`** (`src/leanstack/runtime/qwen_explicit.py`)
+   - 接收 raw token IDs，用 verifier 的 embedding table 嵌入并运行全层验证
+
+2. **新增 `run_dual_model_speculative_request`** (`experiments/models/qwen_explicit_runtime_loop.py`)
+   - 双模型独立 KV cache
+   - Draft phase: 0.6B 模型自回归生成 k 个 proposal tokens
+   - Verify phase: 1.7B 模型单次 forward 验证全部 k tokens
+   - Accept/reject + cache rollback
+
+3. **新增 `qwen-draft` model spec** (`src/leanstack/model_registry.py`)
+   - Qwen3-0.6B-Base 的 geometry 和 metadata
+
+4. **新增脚本**
+   - `scripts/remote_fetch_draft_model.sh` — 下载 draft model
+   - `scripts/remote_leanpack_build_draft.sh` — 打包 draft artifact
+   - `scripts/remote_dual_spec_benchmark.sh` — 运行双模型 speculative benchmark
+
+### 运行步骤
+
+#### 第一步：下载 draft model
+
+```bash
+./scripts/remote_fetch_draft_model.sh
+```
+
+#### 第二步：打包 draft artifact
+
+```bash
+./scripts/remote_leanpack_build_draft.sh
+```
+
+#### 第三步：运行双模型 speculative benchmark
+
+```bash
+# 默认 k=5
+./scripts/remote_dual_spec_benchmark.sh
+
+# 自定义 proposal length
+PROPOSAL_LEN=8 ./scripts/remote_dual_spec_benchmark.sh
+```
+
+#### 也可以通过 runtime loop 直接跑
+
+```bash
+MODEL_ID=Qwen/Qwen3-1.7B-Base \
+PACK_DIR=/home/pto/lean/packed/Qwen__Qwen3-1.7B-Base \
+DRAFT_PACK_DIR=/home/pto/lean/packed/Qwen__Qwen3-0.6B-Base \
+DUAL_MODEL_SPECULATIVE=1 \
+PROPOSAL_LEN=5 \
+RUNTIME_MODE=semantic \
+MAX_PREFILL_TOKENS=64 \
+MAX_NEW_TOKENS=256 \
+EXACT_PREFILL_BUCKET=1 \
+IGNORE_EOS=1 \
+./scripts/remote_qwen_runtime_loop.sh
+```
+
+### 与 same-model speculative 的关键区别
+
+| | same-model split | dual-model |
+|---|---|---|
+| Draft cost | 86% of verifier | 35% of verifier |
+| Hidden state sharing | Draft hidden → verifier | None (token-level interface) |
+| Projection head | Required (linear regression) | Not needed |
+| Acceptance rate | High (same model) | Medium (different model) |
+| Net throughput gain | ≤0% (proven insufficient) | Predicted +30-60% |
+
+---
+
+## Phase 9: Verify Batch Optimization & Remote Validation (2026-03-11)
+
+### 关键发现：per-pass overhead 主导性能
+
+通过远端 GB10 实测 profiling，发现了真正的性能瓶颈：
+
+| | 带宽时间 | 实际时间 | Overhead |
+|---|---|---|---|
+| Verifier decode | 12.6ms | 21.9ms | 9.3ms (42%) |
+| Draft decode | 4.4ms | 9.4ms | 5.0ms (54%) |
+
+**Draft/Verifier 实际时间比为 42.9%（而非带宽理论的 34.6%）**。Overhead 来自 Python dispatch + CUDA kernel launch，28 层 × 10+ kernels/层 = 280+ kernel launches/pass。
+
+### 关键优化：合并 verify batch
+
+原始实现中，verify 阶段做了 **两次** verifier forward pass：
+1. Verify batch: `[current_token, d₁, ..., d_{k-1}]` → k tokens
+2. Bonus decode: `d_k` → 1 token → 获得 bonus prediction
+
+**优化**：将 d_k 并入 verify batch → `[current_token, d₁, ..., d_k]` → k+1 tokens，一次拿到所有验证结果 + bonus。**省掉一整个 verifier decode pass (21.9ms/cycle)**。
+
+### 实测结果
+
+#### 自然文本（高接受率场景）
+
+| k | Throughput | vs vLLM | Acceptance | Tokens/cycle | Cycles |
+|---|-----------|---------|------------|-------------|--------|
+| 3 | 62.2 tok/s | **+35.0%** | 87.7% | 3.61 | 71 |
+| 5 | 61.8 tok/s | **+34.3%** | 82.8% | 5.12 | 50 |
+| 7 | 69.3 tok/s | **+50.4%** | 92.5% | 7.31 | 35 |
+| 10 | 71.1 tok/s | **+54.5%** | 93.2% | 10.24 | 25 |
+
+**所有 k 值在自然文本上都超过 +30% 目标。k=10 达到 71.1 tok/s (+54.5%)。**
+
+#### 高多样性文本（低接受率场景）
+
+| k | Throughput | vs vLLM | Acceptance |
+|---|-----------|---------|------------|
+| 5 | 47.2 tok/s | +2.6% | 58.1% |
+
+接受率 < 60% 时几乎无增益。Speculative decode 的收益高度依赖 draft-verifier 的分布匹配度。
+
+### 模型注册表修正
+
+原始 `qwen-draft` ModelSpec 中 Qwen3-0.6B-Base 的几何参数来自错误来源，已修正为实际 config.json 值：
+- hidden_size: 1024（非896）
+- intermediate_size: 3072（非4864）
+- num_attention_heads: 16（非14）
+- num_key_value_heads: 8（非2）
+- head_dim: 128（非64）
+
+### 性能模型
+
+```
+cycle_time = k × t_draft + t_verify_batch(k+1)
+throughput = tokens_per_cycle / cycle_time
+tokens_per_cycle ≈ k × acceptance_rate + bonus_rate
+
+其中:
+  t_draft ≈ 9.4ms (0.6B single-token decode)
+  t_verify_batch ≈ 21.9ms + Δ(k) (1.7B multi-token verify, Δ随k增长小)
+```
+
+### 结论
+
+**+30% 目标已在自然文本场景中实现。** 关键技术栈：
+1. 外部 draft 模型 (Qwen3-0.6B, 35% 权重) 提供真正的 FLOP 不对称
+2. 合并 verify batch 消除冗余 forward pass
+3. Qwen3 系列内 draft-verifier 匹配度高 (>80% 接受率)
+
+**当前限制**：在高多样性/创意文本场景下，接受率降至 ~58%，增益趋近于零。后续优化方向包括 CUDA Graphs 降低 per-pass overhead、自适应 proposal length、或训练专门的 draft head。
+
+这就是到 2026-03-11 为止，`leanstack` 的真实状态。
