@@ -1,6 +1,6 @@
 # leanstack
 
-`leanstack` is a clean-slate, cuTile-native, GB10-first LLM inference appliance project.
+`leanstack` is a research artifact about whether VIS-native agentic inference stacks can replace compatibility-heavy frameworks — first proven on GPU with Tile IR, then applied to custom silicon with our own virtual instruction set.
 
 The name is intentional:
 
@@ -9,9 +9,23 @@ The name is intentional:
 
 ## Why this repo exists
 
-The current serving ecosystem pays a large compatibility tax: too many layers, too much genericity, and too much hidden state for workloads that ultimately run one concrete model on one concrete machine.
+The dominant LLM serving stacks pay a large compatibility tax: too many layers, too much genericity, and too much hidden state for workloads that ultimately run one concrete model on one concrete machine.
 
-This repo explores a different path with six constraints:
+leanstack tests a specific counter-thesis: **a stable virtual instruction set (VIS) enables an agent to synthesize a narrow, hardware-native inference appliance that is both simpler and faster than a compatibility-first framework.** The VIS is the enabling abstraction — it gives the agent a stable target to generate against, and gives the hardware vendor a stable contract boundary for cross-generation portability.
+
+This is a two-phase project:
+
+**Phase 1 (current)** validates the thesis on NVIDIA GPU using Tile IR as the VIS. The first contract is `Qwen/Qwen3-1.7B-Base BF16` on `GB10 / sm_121`, with `cuTile -> TileIR -> cubin -> SASS` as the only official execution path. The target is `>= 1.30x` warmed vLLM throughput on the primary decode profile — not as an end in itself, but as evidence that the VIS-native approach produces real advantages.
+
+**Phase 2 (declared destination)** reproduces the methodology on custom silicon using our own tile-based VIS. The agent-synthesis pipeline, leanpack format, and economic measurement framework built in Phase 1 are designed to be retargetable.
+
+The project measures three things simultaneously:
+
+1. **Throughput**: can the narrow appliance beat the compatibility-heavy framework?
+2. **Software cost**: how many agent tokens does the narrow appliance cost vs. how much compatibility software does it replace?
+3. **VIS portability**: does the VIS abstraction boundary hold when the target changes?
+
+## Constraints
 
 1. The execution path must stay explicit down to `cuTile -> TileIR -> cubin -> SASS`.
 2. The runtime must stay small enough that an agent can regenerate and modify it cheaply.
@@ -19,25 +33,25 @@ This repo explores a different path with six constraints:
 4. `vLLM`, `SGLang`, `llama.cpp`, and similar systems are compatibility-heavy baselines to compare against, not runtime dependencies.
 5. Remote validation on the DGX Spark machine is part of the development loop, not an afterthought.
 6. The target product is not a generic runtime. It is a `leanpack + leanserve` appliance: offline serving artifacts plus a static resident decode service.
-
-In the strongest form of this thesis, the only meaningful dynamic input should be the user request payload inside a fixed bucket contract. Model geometry, chip target, precision policy, packed weight layout, memory layout, kernel inventory, and dispatch policy should all be fixed by the `Qwen3-1.7B-Base BF16 + GB10` contract. Backend choice is still explicit, but it is selected for throughput, not aesthetics. FP8 and FP4 stay deferred until they clearly beat the BF16 path.
+7. Agent token budget is tracked as a first-class engineering metric alongside throughput and latency.
 
 ## Scope
 
-The appliance reset in this repo does six concrete things:
+The repo does seven concrete things:
 
-1. Defines the project thesis for an agent-built, model-chip-specific LLM stack.
+1. Defines a two-phase project thesis for VIS-centric agentic inference (see `docs/PROJECT_THESIS.md`).
 2. Provides local and remote tooling to validate the cuTile -> TileIR -> cubin -> SASS path.
 3. Keeps precision choice explicit through an executable BF16 / FP8 / FP4 gate on the remote machine.
-4. Rebuilds the runtime around `Qwen/Qwen3-1.7B-Base` BF16 instead of the legacy `Qwen3-32B` reference path.
-5. Keeps the official hot path on `cuTile -> TileIR -> cubin`.
-6. Defines `leanpack` and `leanserve` as the new primary build products: packed serving artifacts and a static resident decode service.
-7. Defines a staged comparison protocol against `vLLM`, `SGLang`, and other external baselines, including both runtime efficiency and software-stack complexity.
+4. Builds the runtime around `Qwen/Qwen3-1.7B-Base` BF16 with explicit ownership of execution, KV cache, and kernel dispatch.
+5. Defines `leanpack` and `leanserve` as the primary build products: packed serving artifacts and a static resident decode service.
+6. Defines a staged comparison protocol against `vLLM`, `SGLang`, and other external baselines, measuring both runtime efficiency and software-stack complexity.
+7. Captures a milestone roadmap (M1/M2/M3 for Phase 1, design principles for Phase 2) in `docs/ROADMAP.md`.
 
 ## Repository layout
 
-- `docs/PROJECT_THESIS.md`: project thesis and hard constraints.
-- `docs/ARCHITECTURE.md`: stack boundaries and replacement strategy.
+- `docs/PROJECT_THESIS.md`: two-phase project thesis (VIS-centric agentic inference on GPU, then custom silicon).
+- `docs/ARCHITECTURE.md`: stack boundaries, replacement strategy, and long-term architecture principles.
+- `docs/ROADMAP.md`: Phase 1 milestones (M1/M2/M3) and Phase 2 design principles.
 - `docs/BENCHMARK_PLAN.md`: benchmark methodology and comparison rules.
 - `docs/COMPARISON_PROTOCOL.md`: staged comparison gates from framework baselines to cuTile kernels to full-stack results.
 - `docs/THROUGHPUT_30_PLAN.md`: the stronger `>= 1.30x warmed vLLM` target, why packing alone is not enough, and the exact speculative-decode plan.
@@ -123,46 +137,22 @@ MODEL_ALLOW_PATTERN='*.json' ./scripts/remote_qwen_fetch.sh
 
 ## Current status
 
-As of 2026-03-07, the active milestone is no longer "run the largest possible Qwen on one GB10."
+As of 2026-03-11, the active milestone is **M1 — Appliance Proof** (see `docs/ROADMAP.md`).
 
-The active milestone is:
+The `+30%` throughput target has been achieved on natural text via dual-model speculative decode:
 
-- keep the public BF16 `cuTile` path green on `GB10 / sm_121`
-- rebuild the runtime around `Qwen/Qwen3-1.7B-Base` BF16 with adapter-owned placement, KV state, and kernel boundaries
-- benchmark only through the staged comparison protocol after that 1.7B BF16 runtime slice exists
+- warmed `vLLM` baseline: ~46.06 tok/s on `decode_64_256`
+- leanstack with speculative decode (k=5): 61.8 tok/s (+34.3%)
+- leanstack with speculative decode (k=10): 71.1 tok/s (+54.5%)
 
-Current facts:
+Key implementation: Qwen3-0.6B-Base as external draft model (35% of verifier weight) + merged verify batch optimization that eliminates a redundant verifier forward pass per cycle.
 
-- local repo scaffolded from zero
-- remote cuTile smoke wired into the DGX Spark machine
-- the executable remote precision gate wrote `/home/pto/lean/artifacts/precision-gate/precision_gate_20260307T083727Z.json`
-- that gate currently recommends `bfloat16` as the active public-cuTile precision on `sm_121`
-- BF16 compiles and runs through the public `cuTile` path on the remote machine
-- the repo now defines an executable Stage 1 hot-kernel bundle for `Qwen3-1.7B-Base` BF16: `q_proj`, `kv_proj`, `o_proj`, `gate/up`, `down`, and `rmsnorm`
-- the latest Stage 1 remote artifact is `/home/pto/lean/artifacts/hot-kernels/20260307T094320Z`
-- current Stage 1 winners are `q_proj`, `o_proj`, `gate_up`, and `rmsnorm`; `kv_proj` and `down_proj` are still behind the local torch reference
-- a metadata-only remote fetch for `Qwen/Qwen3-1.7B-Base` succeeded and wrote `/home/pto/lean/models/Qwen__Qwen3-1.7B-Base.path`
-- the full `Qwen3-1.7B-Base` semantic runtime loop now runs end to end on GB10 from the single-file ModelScope checkpoint
-- on `decode_64_256`, the current full-model `leanstack` result is about `29.95 runtime tok/s`, `0.594s prefill`, and `15.8s` materialization
-- on the same profile, the first cold `vLLM` request measured about `10.94 tok/s` with `18.15s` TTFT, but the warmed `vLLM` request reached about `46.43 tok/s` with `0.253s` TTFT
-- this means the current specialized stack wins the short `16-token` UI smoke, but it still loses the warmed long decode baseline on the main `decode_64_256` profile
-- a local side-by-side UI is available through `python3 scripts/serve_compare_ui.py --port 8787`, then `http://127.0.0.1:8787`
-- the current float8 probe reaches the compiler but fails TileIR verification for both public FP8 dtypes
-- the narrower FP4 sub-gate remains blocked because the public `cuda.tile` frontend does not expose a complete FP4 authoring surface
-- the previous `Qwen3-32B BF16` borrowed and semantic runtime loops remain in the repo as legacy reference data, not the active first target
-- those legacy runs produced only about `2 tokens/s` on the remote GB10, which is not a credible starting point for a framework comparison
+Current precision gates:
 
-The next hard gate is therefore no longer "shave more runtime glue."
+- BF16: cleared on `sm_121`
+- FP8: blocked (TileIR verification fails)
+- FP4: blocked (public `cuda.tile` frontend incomplete)
 
-The next hard gates are:
+The deeper hypothesis remains: once compatibility is treated as optional instead of mandatory, an agent can spend a bounded token budget to generate a more direct and efficient software path for a specific model-chip pair — and that a stable VIS is the abstraction that makes this approach scalable across hardware targets.
 
-- define the offline `leanpack` artifact format for `Qwen3-1.7B-Base` BF16
-- define the resident `leanserve` appliance contract for exact prompt buckets on `GB10 / sm_121`
-- materialize the semantic runtime directly from `leanpack`, not from public checkpoint tensor names
-- move decisive cuTile kernels from microbenchmarks into that appliance path
-
-The newest remote fact is that the packed `leanpack -> leanserve` path now runs the full exact-bucket `decode_64_256` profile at about `46.25 tok/s`, which narrowly clears the current warmed `vLLM` number of about `46.06 tok/s`. The result is real, but the margin is still too small to count as a decisive win. The active bar is now at least `30%` over warmed `vLLM`, so the next design step is no longer "more glue cleanup"; it is exact speculative decode on top of the packed appliance.
-
-The deeper hypothesis is that, once compatibility is treated as optional instead of mandatory, an agent can spend a bounded token budget to generate a more direct and efficient software path for a specific model-chip pair.
-
-GLM remains a second-family target, but it is no longer the first bring-up path.
+See `CURRENT_STATUS.md` for detailed phase-by-phase engineering history and operational instructions.

@@ -1,5 +1,7 @@
 # Architecture
 
+Date: 2026-03-11
+
 ## Goal
 
 Build a narrow, auditable inference stack for `Qwen/Qwen3-1.7B-Base` BF16 on `GB10 / sm_121` that is centered on three moving parts and explicitly avoids paying broad compatibility costs up front:
@@ -183,3 +185,80 @@ The repo intentionally starts with a narrow vertical slice:
 7. API layer only after the execution path is stable
 
 This keeps the stack understandable while still targeting a full model run.
+
+## Long-term architecture principles
+
+The following principles apply to both Phase 1 (GPU / Tile IR) and Phase 2 (custom silicon / our own VIS). They are intended to shape design decisions today so that Phase 2 does not require a rewrite of everything built in Phase 1.
+
+### 1. The model-chip contract schema is a first-class artifact
+
+The current `Qwen3-1.7B-Base BF16 + GB10/sm_121` contract is the first instance of a general pattern. That pattern should be formalized:
+
+- **model geometry**: layers, hidden size, heads, GQA config, head dimension, vocabulary size, normalization type, activation type
+- **chip capability**: sm version (or our VIS target version), tensor-core generation, memory bandwidth, compute peak per precision, memory capacity
+- **derived contract**: kernel inventory, dispatch policy, precision policy, KV cache layout, prompt-bucket manifest, leanpack artifact structure
+
+The schema is not just documentation. It is the input to the agent-synthesis pipeline: given a new model-chip pair, the agent should be able to read the contract schema and generate the kernel inventory, dispatch policy, and leanpack artifact. The schema should be machine-readable and versioned.
+
+In Phase 1, the schema is implicit in `model_registry.py` and `manifest.json`. The path toward M2 requires making it explicit and formalizable.
+
+### 2. Agent token budget is an explicit engineering metric
+
+Alongside throughput, latency, and memory, the project tracks agent token budget as a first-class metric:
+
+- **bring-up cost**: how many agent tokens (prompt + response + iteration) does it take to bring up a new model-chip pair from the contract schema to a running leanpack + leanserve appliance?
+- **maintenance cost**: how many agent tokens does it take to update an existing appliance when the model or chip contract changes?
+- **comparison baseline**: how much compatibility-oriented software (measured in lines of code, dependency count, configuration surface) does the agent token budget replace?
+
+The economic thesis of leanstack is that agent cost < compatibility cost for narrow appliances. This metric is the primary evidence for or against that claim.
+
+### 3. Leanpack as a potentially multi-target artifact
+
+The current `leanpack/v0` format targets `sm_121` only. The format should be designed so that a future version can target multiple backends:
+
+- `sm_121` (Blackwell, Tile IR)
+- a future sm generation (Tile IR, recompiled)
+- our own chip (our own VIS)
+
+This does not mean leanpack must support all targets today. It means:
+
+- the manifest schema should include an explicit `target` field that distinguishes backend-specific sections from backend-agnostic sections
+- packed weight tensors (which are precision-specific but not ISA-specific) should be factored separately from compiled kernel artifacts (which are ISA-specific)
+- the leanserve loader should be organized so that target-specific dispatch is a plugin, not a hardcoded assumption
+
+The current `leanpack/v0` layout already separates weights from metadata. The next step is to make the separation between "model artifact" and "target artifact" explicit in the manifest schema.
+
+### 4. VIS portability as a factoring requirement
+
+Components that are VIS-agnostic should be factored to remain so. Components that are VIS-specific should be clearly marked.
+
+**VIS-agnostic** (should remain portable across Tile IR and our future VIS):
+
+- model-chip contract schema and its parser
+- leanpack manifest schema and weight packing logic
+- leanserve request admission, scheduling, and KV cache management
+- benchmark harness and comparison protocol
+- agent-synthesis pipeline orchestration (prompt construction, benchmark evaluation, promotion logic)
+
+**VIS-specific** (expected to differ per target):
+
+- kernel source code (cuTile source for Tile IR; our language for our VIS)
+- compiled artifacts (cubin for sm_121; our binary format for our chip)
+- kernel dispatch and launch mechanics
+- memory layout optimizations that depend on physical hardware topology
+
+The factoring boundary should be: everything above "launch this kernel with these arguments on these buffers" is VIS-agnostic. Everything at and below that line is VIS-specific.
+
+This factoring is not a premature abstraction exercise. It is a constraint that prevents Phase 1 engineering from accidentally embedding sm_121 assumptions into layers that should be reusable in Phase 2.
+
+### 5. Cross-generation portability as a testable property
+
+Tile IR's value proposition is that it provides cross-generation portability: code targeting Tile IR should recompile without reauthoring when the physical sm target changes. This is the analog of what PTX proved across GPU generations.
+
+leanstack should be the public evidence that Tile IR delivers the same promise for tensor-core workloads. To test this:
+
+- leanpack format versioning should be aligned to Tile IR specification versioning
+- when the next Blackwell-successor sm target appears, leanstack kernels should recompile without source changes
+- if recompilation fails or produces regressions, the failure should be documented precisely: which Tile IR operations broke, which kernel patterns required reauthoring, and what the cost was
+
+This property is not testable today (only one sm target exists). But the architecture should be organized so that it becomes testable as soon as a second target appears.
