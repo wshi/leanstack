@@ -20,12 +20,19 @@ This document captures the Phase 1 milestones and Phase 2 design principles as a
 
 **Success criteria:**
 
-- `>= 1.30x` warmed vLLM on `decode_64_256` — **achieved** (61.8-71.1 tok/s, +34-54%, as of 2026-03-11)
+- `>= 1.30x` warmed vLLM on `decode_64_256` for the **fixed-contract official path**
 - leanpack + leanserve runs end to end from packed artifact on GB10
 - critical path is inspectable down to TileIR and SASS
-- exact speculative decode preserves output-equivalence with the base model
+- official benchmark rows are explicitly labeled as `fixed-contract` or `exploratory`
+- exact speculative decode preserves output-equivalence with the base model when used
 
 **Falsification:** If, after packed weights + resident appliance + decisive cuTile decode kernels + speculative decode, the stack cannot exceed warmed vLLM by 30% on the fixed contract, then the compatibility tax is not the dominant bottleneck for this workload. The remaining bottleneck is kernel maturity or algorithmic efficiency.
+
+**Current status (2026-03-12):**
+
+- fixed-contract packed appliance path is near warmed-vLLM parity, but not yet a decisive `>= 1.30x` lead
+- exploratory dual-model speculative runs can exceed `+30%` on selected prompts
+- those exploratory results are useful for direction finding but are not yet sufficient as the primary VIS-on-DSA proof line
 
 **Remaining M1 work:**
 
@@ -33,6 +40,7 @@ This document captures the Phase 1 milestones and Phase 2 design principles as a
 - Move decisive cuTile kernels from microbenchmarks into the appliance hot path (kv_proj, down_proj, logits are still on eager PyTorch)
 - Evaluate the +30% result stability across diverse text types (creative/high-entropy text currently shows only +2.6%)
 - Record agent token budget spent on the Qwen/GB10 bring-up
+- Keep compare harness and UI locked to the fixed official contract for claim-bearing results
 
 ### M2 — Synthesis Generalization
 

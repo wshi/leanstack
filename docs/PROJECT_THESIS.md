@@ -101,6 +101,20 @@ It begins by asking how small the stack can become if:
 - the agent can rewrite code quickly
 - execution-time uncertainty is intentionally removed from everything except the user request
 
+### 1b. Official evidence must use a fixed contract
+
+To support the custom-DSA VIS thesis, official comparisons must not drift across knobs that are convenient on GPU but unavailable or undesirable on an appliance path.
+
+For Phase 1 evidence used to justify Phase 2:
+
+- model contract is fixed to `Qwen/Qwen3-1.7B-Base`
+- precision is fixed to `BF16`
+- hardware target is fixed to `GB10 / sm_121`
+- official profile is fixed to `decode_64_256`
+- serving path is fixed to packed appliance mode (`leanpack + leanserve`), not checkpoint fallback
+
+Other runs are still useful for exploration, but they are not counted as primary thesis evidence.
+
 ### 2. Qwen3-1.7B-Base BF16 is the first contract
 
 The initial system is now shaped around one active deployment contract and two deferred precision investigations:
@@ -202,6 +216,7 @@ This constraint does not mean the VIS cannot evolve. It means evolution must be 
 - `llama.cpp` is tracked as a secondary deployment reference when the weight format is not apples-to-apples
 - the result table includes `generated tokens/s`, latency, memory use, process shape, operational complexity, and software-stack size proxies
 - the primary throughput target is `>= 1.30x` warmed `vLLM` on the main exact-bucket decode profile
+- all primary-claim rows in the result table are tagged as `fixed-contract` or `exploratory`; only `fixed-contract` rows count toward the VIS-on-DSA argument
 
 ### Phase 1 VIS thesis success
 

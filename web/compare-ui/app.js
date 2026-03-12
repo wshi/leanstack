@@ -21,6 +21,8 @@ const elements = {
   latencyRatio: document.querySelector("#latency-ratio"),
 };
 
+const OFFICIAL_PROFILE = "decode_64_256";
+
 function setBusy(isBusy) {
   elements.refreshStatusButton.disabled = isBusy;
   elements.startVllmButton.disabled = isBusy;
@@ -80,11 +82,13 @@ async function refreshStatus() {
       status.vllm_ready ? "good" : "warn",
     );
     elements.modelSize.textContent = formatBytes(status.model_size_bytes);
-    elements.activityLog.textContent = status.download_complete
-      ? "Remote checkpoint is ready."
-      : status.fetch_processes.length
+    elements.activityLog.textContent = !status.download_complete
+      ? status.fetch_processes.length
         ? `Remote download in progress: ${status.fetch_processes[0]}`
-        : "Remote checkpoint is not ready yet.";
+        : "Remote checkpoint is not ready yet."
+      : !status.pack_ready
+        ? "Checkpoint is ready, but leanpack artifact is missing."
+        : "Remote checkpoint and leanpack artifact are ready.";
   } catch (error) {
     elements.activityLog.textContent = String(error);
     setStatusValue(elements.downloadStatus, "Error", "warn");
@@ -136,7 +140,7 @@ async function compare() {
   const maxNewTokensRaw = elements.maxNewTokensInput.value.trim();
   const body = {
     prompt,
-    profile: elements.profileInput.value,
+    profile: OFFICIAL_PROFILE,
   };
   if (maxNewTokensRaw) {
     body.max_new_tokens = Number(maxNewTokensRaw);

@@ -1,18 +1,17 @@
 # CURRENT STATUS
 
-Date: 2026-03-11
+Date: 2026-03-12
 Repo: `/Users/wei/work/spark/leanstack`  
 Remote deploy root: `/home/pto/lean`  
 Active remote repo: `/home/pto/lean/repo`
 
 ## 1. 一句话总结
 
-`leanstack` 在 `Qwen/Qwen3-1.7B-Base + GB10 / sm_121` 上通过双模型 speculative decode（Qwen3-0.6B draft + 合并 verify batch 优化）达到了 **62-71 tok/s**，相对 warmed vLLM (~46.06 tok/s) 实现了 **+34% ~ +54%** 的吞吐提升。
+`leanstack` 已完成“固定模型 + 固定芯片 + 固定执行合同”的官方对比路径收敛：`Qwen/Qwen3-1.7B-Base + BF16 + GB10/sm_121 + decode_64_256 + packed appliance`，并将 compare/UI 与 remote benchmark 统一为 strict-contract 模式，用于支撑后续 DSA 上的 VIS 论证。
 
-**+30% 目标已在自然文本场景中达成。**
-- packed appliance 路径成立，方向是对的。
-- same-model prefix/suffix self-speculative decode 已经验证过，但即使 acceptance 很高，也不足以把吞吐抬到 `+30%`。
-- 下一步如果继续追求 `+30%`，需要引入一个真正更小的 draft artifact，而不是继续深挖同一个模型内部的 prefix/suffix split。
+当前数据分层解释：
+- **官方 fixed-contract 路径**：packed appliance 与 warmed vLLM 接近，尚未形成稳定的 `+30%` 决定性优势。
+- **探索性路径**（例如 dual-model speculative）可以出现 `+30%`，但不作为 DSA VIS 主结论依据。
 
 ## 2. 当前最终目标
 
@@ -28,7 +27,8 @@ Active remote repo: `/home/pto/lean/repo`
 
 - 是否可以把兼容性税从 runtime 挪到离线 agent 生成和打包阶段
 - 是否可以用更少的软件栈复杂度，换来更高的硬件效率
-- 是否可以在这个固定合同下，显著超过 warmed `vLLM`
+- 是否可以在这个固定合同下，稳定显著超过 warmed `vLLM`
+- 是否可以把这套方法迁移到自研 DSA，并论证“VIS 是 agent 时代算力使能的核心边界”
 
 ## 3. 到目前为止的全部工作，按阶段整理
 
@@ -866,7 +866,7 @@ IGNORE_EOS=1 \
 
 ---
 
-## Phase 9: Verify Batch Optimization & Remote Validation (2026-03-11)
+## Phase 9: Verify Batch Optimization & Remote Validation (2026-03-11, exploratory track)
 
 ### 关键发现：per-pass overhead 主导性能
 
@@ -898,7 +898,8 @@ IGNORE_EOS=1 \
 | 7 | 69.3 tok/s | **+50.4%** | 92.5% | 7.31 | 35 |
 | 10 | 71.1 tok/s | **+54.5%** | 93.2% | 10.24 | 25 |
 
-**所有 k 值在自然文本上都超过 +30% 目标。k=10 达到 71.1 tok/s (+54.5%)。**
+**这组数据证明 dual-model speculative 作为探索方向可超过 +30%。**  
+但它不属于当前 fixed-contract 官方结论口径（官方口径固定为单模型 packed appliance）。
 
 #### 高多样性文本（低接受率场景）
 
@@ -929,13 +930,15 @@ tokens_per_cycle ≈ k × acceptance_rate + bonus_rate
   t_verify_batch ≈ 21.9ms + Δ(k) (1.7B multi-token verify, Δ随k增长小)
 ```
 
-### 结论
+### 结论（探索性）
 
-**+30% 目标已在自然文本场景中实现。** 关键技术栈：
+**dual-model speculative 在自然文本场景中可实现 +30% 以上。** 关键技术栈：
 1. 外部 draft 模型 (Qwen3-0.6B, 35% 权重) 提供真正的 FLOP 不对称
 2. 合并 verify batch 消除冗余 forward pass
 3. Qwen3 系列内 draft-verifier 匹配度高 (>80% 接受率)
 
 **当前限制**：在高多样性/创意文本场景下，接受率降至 ~58%，增益趋近于零。后续优化方向包括 CUDA Graphs 降低 per-pass overhead、自适应 proposal length、或训练专门的 draft head。
 
-这就是到 2026-03-11 为止，`leanstack` 的真实状态。
+**口径说明（2026-03-12 更新）**：以上结果属于 exploratory 路径，用于发现算法不对称来源；DSA VIS 主结论以 fixed-contract 官方路径为准。
+
+这就是到 2026-03-12 为止，`leanstack` 的真实状态。

@@ -52,6 +52,7 @@ The repo does seven concrete things:
 - `docs/PROJECT_THESIS.md`: two-phase project thesis (VIS-centric agentic inference on GPU, then custom silicon).
 - `docs/ARCHITECTURE.md`: stack boundaries, replacement strategy, and long-term architecture principles.
 - `docs/ROADMAP.md`: Phase 1 milestones (M1/M2/M3) and Phase 2 design principles.
+- `docs/DSA_VIS_PROOF_PROTOCOL.md`: falsifiable protocol for proving VIS value on custom DSA using performance + regeneration-cost + retargetability together.
 - `docs/BENCHMARK_PLAN.md`: benchmark methodology and comparison rules.
 - `docs/COMPARISON_PROTOCOL.md`: staged comparison gates from framework baselines to cuTile kernels to full-stack results.
 - `docs/THROUGHPUT_30_PLAN.md`: the stronger `>= 1.30x warmed vLLM` target, why packing alone is not enough, and the exact speculative-decode plan.
@@ -111,6 +112,7 @@ MODEL_ID=Qwen/Qwen3-1.7B-Base ./scripts/remote_qwen_fetch.sh
 MODEL_ID=Qwen/Qwen3-1.7B-Base OVERWRITE=1 ./scripts/remote_leanpack_build.sh
 ./scripts/remote_leanserve_layout.sh
 MODEL_ID=Qwen/Qwen3-1.7B-Base ./scripts/remote_qwen_baseline.sh
+STRICT_CONTRACT=1 STRICT_PACKED=1 PROFILE=decode_64_256 MODEL_ID=Qwen/Qwen3-1.7B-Base ./scripts/remote_leanstack_benchmark.sh
 MODEL_NAME=qwen3-1.7b-base ./scripts/remote_openai_profile_sweep.sh
 ```
 
@@ -137,15 +139,16 @@ MODEL_ALLOW_PATTERN='*.json' ./scripts/remote_qwen_fetch.sh
 
 ## Current status
 
-As of 2026-03-11, the active milestone is **M1 — Appliance Proof** (see `docs/ROADMAP.md`).
+As of 2026-03-12, the active milestone remains **M1 — Appliance Proof** (see `docs/ROADMAP.md`), but with a stricter interpretation:
 
-The `+30%` throughput target has been achieved on natural text via dual-model speculative decode:
+- official comparison claims are now locked to the fixed contract `Qwen/Qwen3-1.7B-Base + BF16 + GB10/sm_121 + decode_64_256 + packed appliance`
+- compare UI and remote benchmark paths enforce strict-packed and strict-contract guards
+- only this fixed-contract path is treated as evidence for the DSA VIS thesis
 
-- warmed `vLLM` baseline: ~46.06 tok/s on `decode_64_256`
-- leanstack with speculative decode (k=5): 61.8 tok/s (+34.3%)
-- leanstack with speculative decode (k=10): 71.1 tok/s (+54.5%)
+Current data split:
 
-Key implementation: Qwen3-0.6B-Base as external draft model (35% of verifier weight) + merged verify batch optimization that eliminates a redundant verifier forward pass per cycle.
+- official fixed-contract packed path: near warmed-`vLLM` parity (small lead, not yet a decisive margin)
+- exploratory dual-model speculative path: can exceed `+30%`, but is not counted as core fixed-contract proof for the VIS-on-DSA argument
 
 Current precision gates:
 

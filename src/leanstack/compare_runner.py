@@ -13,9 +13,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 REMOTE_HOST = "pto@kb119856792y.vicp.fun"
 REMOTE_PORT = "33402"
 DEFAULT_MODEL_ID = "Qwen/Qwen3-1.7B-Base"
-DEFAULT_MODEL_DIR = "/home/pto/lean/models/Qwen/Qwen3-1.7B-Base"
 DEFAULT_MODEL_PATH_FILE = "/home/pto/lean/models/Qwen__Qwen3-1.7B-Base.path"
+DEFAULT_PACK_DIR = "/home/pto/lean/packed/Qwen__Qwen3-1.7B-Base"
 DEFAULT_PROFILE = "decode_64_256"
+DEFAULT_RUNTIME_MODE = "semantic"
+DEFAULT_DTYPE = "bfloat16"
+DEFAULT_DEVICE = "cuda:0"
+OFFICIAL_CONTRACT_ID = "qwen3-1.7b-base-bf16-gb10-sm121-decode_64_256"
+OFFICIAL_HARDWARE = "GB10 / sm_121"
 DEFAULT_MODEL_NAME = "qwen3-1.7b-base"
 DEFAULT_VLLM_VENV = "/home/pto/lean/venv-vllm-cu128"
 DEFAULT_PYTHON_DEV_ROOT = "/home/pto/lean/tmp/pydev_probe/extracted"
@@ -105,9 +110,12 @@ import json
 import subprocess
 from pathlib import Path
 
-model_dir = Path("/home/pto/lean/models/Qwen/Qwen3-1.7B-Base")
 path_file = Path("/home/pto/lean/models/Qwen__Qwen3-1.7B-Base.path")
-weight_file = model_dir / "model.safetensors"
+pack_dir = Path("/home/pto/lean/packed/Qwen__Qwen3-1.7B-Base")
+manifest_file = pack_dir / "manifest.json"
+model_ref = path_file.read_text().strip() if path_file.exists() else ""
+model_dir = Path(model_ref) if model_ref else Path("")
+weight_file = model_dir / "model.safetensors" if model_ref else Path("")
 fetch = subprocess.run(["pgrep", "-xaf", r"python3 .*fetch_modelscope_snapshot.py"], capture_output=True, text=True)
 vllm_ready = subprocess.run(
     ["bash", "-lc", "curl -fsS http://127.0.0.1:8000/v1/models >/dev/null 2>&1"],
@@ -115,23 +123,27 @@ vllm_ready = subprocess.run(
 )
 
 size_bytes = 0
-if model_dir.exists():
+if model_ref and model_dir.exists():
     for path in model_dir.rglob("*"):
         if path.is_file():
             size_bytes += path.stat().st_size
 
 payload = {
     "path_file_exists": path_file.exists(),
-    "path_file": path_file.read_text().strip() if path_file.exists() else None,
-    "model_dir_exists": model_dir.exists(),
-    "model_files": sorted(path.name for path in model_dir.glob("*") if path.is_file()) if model_dir.exists() else [],
+    "path_file": model_ref or None,
+    "model_dir_exists": bool(model_ref and model_dir.exists()),
+    "model_files": sorted(path.name for path in model_dir.glob("*") if path.is_file()) if model_ref and model_dir.exists() else [],
     "model_size_bytes": size_bytes,
-    "weight_file_exists": weight_file.exists(),
-    "weight_size_bytes": weight_file.stat().st_size if weight_file.exists() else 0,
+    "weight_file_exists": bool(model_ref and weight_file.exists()),
+    "weight_size_bytes": weight_file.stat().st_size if model_ref and weight_file.exists() else 0,
+    "pack_dir": str(pack_dir),
+    "pack_dir_exists": pack_dir.exists(),
+    "pack_manifest_exists": manifest_file.exists(),
     "fetch_processes": [line for line in fetch.stdout.splitlines() if line.strip()],
     "vllm_ready": vllm_ready.returncode == 0,
 }
 payload["download_complete"] = payload["weight_file_exists"]
+payload["pack_ready"] = payload["pack_manifest_exists"]
 print(json.dumps(payload))
 PY
 """.strip()
@@ -190,7 +202,7 @@ def list_matching_vllm_pids() -> list[int]:
             continue
         if "--port 8000" not in command:
             continue
-        if "/home/pto/lean/models/Qwen/Qwen3-1___7B-Base" not in command:
+        if "--served-model-name qwen3-1.7b-base" not in command:
             continue
         matched.append(int(pid_text))
     return matched
@@ -298,15 +310,21 @@ def run_leanstack_benchmark(
     prompt: str,
     profile: str = DEFAULT_PROFILE,
     max_new_tokens: int | None = None,
-    runtime_mode: str = "semantic",
+    runtime_mode: str = DEFAULT_RUNTIME_MODE,
     resident_requests: int = 3,
     warmup_requests: int = 1,
 ) -> dict[str, Any]:
     env = {
         "MODEL_ID": DEFAULT_MODEL_ID,
+        "PACK_DIR": DEFAULT_PACK_DIR,
+        "STRICT_PACKED": "1",
+        "STRICT_CONTRACT": "1",
         "PROFILE": profile,
         "RUNTIME_MODE": runtime_mode,
         "NUM_LAYERS": "0",
+        "DTYPE": DEFAULT_DTYPE,
+        "DEVICE": DEFAULT_DEVICE,
+        "SPECULATIVE": "0",
         "PROMPT_OVERRIDE": prompt,
         "PROMPT_FORMAT_OVERRIDE": "raw",
         "RESIDENT_REQUESTS": str(resident_requests),
@@ -326,9 +344,15 @@ def build_comparison_payload(
     profile: str = DEFAULT_PROFILE,
     max_new_tokens: int | None = None,
 ) -> dict[str, Any]:
+    if profile != DEFAULT_PROFILE:
+        raise RuntimeError(
+            f"official comparison is locked to profile={DEFAULT_PROFILE}; got profile={profile}"
+        )
     status = check_remote_status()
     if not status.get("download_complete"):
         raise RuntimeError("Qwen3-1.7B-Base checkpoint is not fully downloaded on the remote machine yet.")
+    if not status.get("pack_ready"):
+        raise RuntimeError(f"leanpack artifact is not ready at {DEFAULT_PACK_DIR}.")
     vllm_status = ensure_vllm_ready()
     vllm = run_vllm_benchmark(prompt=prompt, profile=profile, max_new_tokens=max_new_tokens)
     stop_status = stop_vllm()
@@ -341,6 +365,18 @@ def build_comparison_payload(
 
     return {
         "status": status,
+        "official_contract": {
+            "id": OFFICIAL_CONTRACT_ID,
+            "model_id": DEFAULT_MODEL_ID,
+            "profile": DEFAULT_PROFILE,
+            "runtime_mode": DEFAULT_RUNTIME_MODE,
+            "dtype": DEFAULT_DTYPE,
+            "device": DEFAULT_DEVICE,
+            "pack_dir": DEFAULT_PACK_DIR,
+            "hardware": OFFICIAL_HARDWARE,
+            "strict_packed": True,
+            "strict_contract": True,
+        },
         "vllm_status": vllm_status,
         "vllm_stop_status": stop_status,
         "profile": profile,

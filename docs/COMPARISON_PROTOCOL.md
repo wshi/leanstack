@@ -1,6 +1,6 @@
 # Comparison Protocol
 
-Date verified: 2026-03-09
+Date verified: 2026-03-12
 
 ## Goal
 
@@ -20,6 +20,13 @@ Can it beat warmed `vLLM` by at least `30%` on the primary official decode profi
 - decode mode: non-thinking
 - sampling: deterministic
 - backend for official `leanstack` claims: `cuTile -> TileIR -> cubin`
+- official claim profile: `decode_64_256`
+- official serving mode: strict packed appliance (`leanpack` manifest required)
+
+Result labels:
+
+- `fixed-contract`: all contract fields above unchanged; eligible for thesis claims
+- `exploratory`: any deviation (different profile, speculative path, alternate model); useful for direction, not thesis evidence
 
 ## Why the protocol is staged
 
