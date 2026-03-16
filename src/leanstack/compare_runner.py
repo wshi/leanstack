@@ -12,20 +12,25 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REMOTE_HOST = "pto@kb119856792y.vicp.fun"
 REMOTE_PORT = "33402"
-DEFAULT_MODEL_ID = "Qwen/Qwen3-1.7B-Base"
-DEFAULT_MODEL_PATH_FILE = "/home/pto/lean/models/Qwen__Qwen3-1.7B-Base.path"
-DEFAULT_PACK_DIR = "/home/pto/lean/packed/Qwen__Qwen3-1.7B-Base"
+DEFAULT_MODEL_ID = "Qwen/Qwen3-4B-Base"
+DEFAULT_MODEL_PATH_FILE = "/home/pto/lean/models/Qwen__Qwen3-4B-Base.path"
+DEFAULT_PACK_DIR = "/home/pto/lean/packed/Qwen__Qwen3-4B-Base"
 DEFAULT_PROFILE = "decode_64_256"
 DEFAULT_RUNTIME_MODE = "semantic"
 DEFAULT_DTYPE = "bfloat16"
 DEFAULT_DEVICE = "cuda:0"
-OFFICIAL_CONTRACT_ID = "qwen3-1.7b-base-bf16-gb10-sm121-decode_64_256"
+OFFICIAL_CONTRACT_ID = "qwen3-4b-base-bf16-gb10-sm121-decode_64_256"
 OFFICIAL_HARDWARE = "GB10 / sm_121"
-DEFAULT_MODEL_NAME = "qwen3-1.7b-base"
+DEFAULT_MODEL_NAME = "qwen3-4b-base"
+DEFAULT_VLLM_BASELINE_MODE = "best"
+DEFAULT_VLLM_BASELINE_RUNS = 3
 DEFAULT_VLLM_VENV = "/home/pto/lean/venv-vllm-cu128"
 DEFAULT_PYTHON_DEV_ROOT = "/home/pto/lean/tmp/pydev_probe/extracted"
 DEFAULT_VLLM_EXEC = f"{DEFAULT_VLLM_VENV}/bin/vllm"
 DEFAULT_VLLM_PYTHON_LAUNCH = f"{DEFAULT_VLLM_VENV}/bin/python3 {DEFAULT_VLLM_EXEC}"
+DEFAULT_DECODE_POLICY = "greedy"
+DEFAULT_SAMPLING_TEMPERATURE = 0.0
+DEFAULT_IGNORE_EOS = True
 
 
 @dataclass(frozen=True)
@@ -91,6 +96,122 @@ def _extract_last_json(text: str) -> dict[str, Any]:
     raise ValueError("could not find a terminal JSON object in command output")
 
 
+def _parse_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "off", ""}:
+            return False
+    return None
+
+
+def validate_comparison_fairness(
+    *,
+    vllm: dict[str, Any],
+    leanstack: dict[str, Any],
+    expected_max_new_tokens: int | None = None,
+) -> dict[str, Any]:
+    vllm_prompt_tokens = _parse_int(vllm.get("prompt_tokens"))
+    leanstack_prompt_tokens = _parse_int(leanstack.get("prompt_tokens"))
+    vllm_generated_tokens = _parse_int(vllm.get("generated_tokens"))
+    leanstack_generated_tokens = _parse_int(leanstack.get("emitted_tokens"))
+    vllm_temperature = _parse_float(vllm.get("temperature"))
+    vllm_ignore_eos = _parse_bool(vllm.get("ignore_eos"))
+    leanstack_ignore_eos = _parse_bool(leanstack.get("ignore_eos"))
+    leanstack_decode_policy = str(leanstack.get("decode_policy") or "").strip().lower()
+
+    target_max_new_tokens = expected_max_new_tokens
+    if target_max_new_tokens is None:
+        target_max_new_tokens = _parse_int(leanstack.get("max_new_tokens"))
+
+    violations: list[str] = []
+    if vllm_temperature is None:
+        violations.append("vLLM result is missing `temperature` metadata")
+    elif abs(vllm_temperature - DEFAULT_SAMPLING_TEMPERATURE) > 1e-12:
+        violations.append(
+            f"vLLM temperature must be {DEFAULT_SAMPLING_TEMPERATURE}, got {vllm_temperature}"
+        )
+
+    if leanstack_decode_policy != DEFAULT_DECODE_POLICY:
+        violations.append(
+            f"leanstack decode policy must be `{DEFAULT_DECODE_POLICY}`, got `{leanstack_decode_policy or 'missing'}`"
+        )
+
+    if vllm_ignore_eos is None:
+        violations.append("vLLM result is missing `ignore_eos` metadata")
+    elif vllm_ignore_eos != DEFAULT_IGNORE_EOS:
+        violations.append(f"vLLM ignore_eos must be {DEFAULT_IGNORE_EOS}, got {vllm_ignore_eos}")
+
+    if leanstack_ignore_eos is None:
+        violations.append("leanstack result is missing `ignore_eos` metadata")
+    elif leanstack_ignore_eos != DEFAULT_IGNORE_EOS:
+        violations.append(f"leanstack ignore_eos must be {DEFAULT_IGNORE_EOS}, got {leanstack_ignore_eos}")
+
+    if vllm_prompt_tokens is None or leanstack_prompt_tokens is None:
+        violations.append("prompt token counts must exist on both sides")
+    elif vllm_prompt_tokens != leanstack_prompt_tokens:
+        violations.append(
+            f"prompt token mismatch: vLLM={vllm_prompt_tokens}, leanstack={leanstack_prompt_tokens}"
+        )
+
+    if vllm_generated_tokens is None or leanstack_generated_tokens is None:
+        violations.append("generated token counts must exist on both sides")
+    elif vllm_generated_tokens != leanstack_generated_tokens:
+        violations.append(
+            f"generated token mismatch: vLLM={vllm_generated_tokens}, leanstack={leanstack_generated_tokens}"
+        )
+
+    if target_max_new_tokens is not None:
+        if vllm_generated_tokens is None or vllm_generated_tokens != target_max_new_tokens:
+            violations.append(
+                f"vLLM generated_tokens must equal max_new_tokens={target_max_new_tokens}, got {vllm_generated_tokens}"
+            )
+        if leanstack_generated_tokens is None or leanstack_generated_tokens != target_max_new_tokens:
+            violations.append(
+                f"leanstack emitted_tokens must equal max_new_tokens={target_max_new_tokens}, got {leanstack_generated_tokens}"
+            )
+
+    if violations:
+        raise RuntimeError(
+            "comparison fairness gate failed:\n- " + "\n- ".join(violations)
+        )
+
+    return {
+        "passed": True,
+        "decode_policy": DEFAULT_DECODE_POLICY,
+        "temperature": DEFAULT_SAMPLING_TEMPERATURE,
+        "ignore_eos": DEFAULT_IGNORE_EOS,
+        "prompt_tokens": vllm_prompt_tokens,
+        "generated_tokens": vllm_generated_tokens,
+        "max_new_tokens": target_max_new_tokens,
+    }
+
+
 def _run_shell_script(script_name: str, env: dict[str, str] | None = None) -> CommandResult:
     script_path = REPO_ROOT / "scripts" / script_name
     return _run_command(["/bin/zsh", str(script_path)], env=env)
@@ -110,12 +231,13 @@ import json
 import subprocess
 from pathlib import Path
 
-path_file = Path("/home/pto/lean/models/Qwen__Qwen3-1.7B-Base.path")
-pack_dir = Path("/home/pto/lean/packed/Qwen__Qwen3-1.7B-Base")
+path_file = Path("/home/pto/lean/models/Qwen__Qwen3-4B-Base.path")
+pack_dir = Path("/home/pto/lean/packed/Qwen__Qwen3-4B-Base")
 manifest_file = pack_dir / "manifest.json"
 model_ref = path_file.read_text().strip() if path_file.exists() else ""
 model_dir = Path(model_ref) if model_ref else Path("")
 weight_file = model_dir / "model.safetensors" if model_ref else Path("")
+weight_index_file = model_dir / "model.safetensors.index.json" if model_ref else Path("")
 fetch = subprocess.run(["pgrep", "-xaf", r"python3 .*fetch_modelscope_snapshot.py"], capture_output=True, text=True)
 vllm_ready = subprocess.run(
     ["bash", "-lc", "curl -fsS http://127.0.0.1:8000/v1/models >/dev/null 2>&1"],
@@ -128,6 +250,22 @@ if model_ref and model_dir.exists():
         if path.is_file():
             size_bytes += path.stat().st_size
 
+expected_weight_files = []
+missing_weight_files = []
+weight_shard_sizes = {}
+if model_ref and weight_index_file.exists():
+    index_payload = json.loads(weight_index_file.read_text())
+    expected_weight_files = sorted(set(index_payload.get("weight_map", {}).values()))
+    for filename in expected_weight_files:
+        shard_path = model_dir / filename
+        if shard_path.exists():
+            weight_shard_sizes[filename] = shard_path.stat().st_size
+        else:
+            missing_weight_files.append(filename)
+
+weight_single_file_complete = bool(model_ref and weight_file.exists() and weight_file.stat().st_size > 0)
+weight_shards_complete = bool(expected_weight_files) and not missing_weight_files
+
 payload = {
     "path_file_exists": path_file.exists(),
     "path_file": model_ref or None,
@@ -136,13 +274,19 @@ payload = {
     "model_size_bytes": size_bytes,
     "weight_file_exists": bool(model_ref and weight_file.exists()),
     "weight_size_bytes": weight_file.stat().st_size if model_ref and weight_file.exists() else 0,
+    "weight_index_exists": bool(model_ref and weight_index_file.exists()),
+    "expected_weight_files": expected_weight_files,
+    "missing_weight_files": missing_weight_files,
+    "weight_shard_sizes": weight_shard_sizes,
+    "weight_single_file_complete": weight_single_file_complete,
+    "weight_shards_complete": weight_shards_complete,
     "pack_dir": str(pack_dir),
     "pack_dir_exists": pack_dir.exists(),
     "pack_manifest_exists": manifest_file.exists(),
     "fetch_processes": [line for line in fetch.stdout.splitlines() if line.strip()],
     "vllm_ready": vllm_ready.returncode == 0,
 }
-payload["download_complete"] = payload["weight_file_exists"]
+payload["download_complete"] = weight_single_file_complete or weight_shards_complete
 payload["pack_ready"] = payload["pack_manifest_exists"]
 print(json.dumps(payload))
 PY
@@ -184,6 +328,7 @@ pid_file = Path("/home/pto/lean/logs/vllm_8000.pid")
 stopped_pids = []
 vllm_exec = "__VLLM_EXEC__"
 vllm_python_launch = "__VLLM_PYTHON_LAUNCH__"
+served_model_name = "__SERVED_MODEL_NAME__"
 
 def list_matching_vllm_pids() -> list[int]:
     ps = subprocess.run(
@@ -202,7 +347,7 @@ def list_matching_vllm_pids() -> list[int]:
             continue
         if "--port 8000" not in command:
             continue
-        if "--served-model-name qwen3-1.7b-base" not in command:
+        if f"--served-model-name {served_model_name}" not in command:
             continue
         matched.append(int(pid_text))
     return matched
@@ -273,6 +418,9 @@ PY
     remote_script = remote_script.replace("__VLLM_EXEC__", DEFAULT_VLLM_EXEC).replace(
         "__VLLM_PYTHON_LAUNCH__",
         DEFAULT_VLLM_PYTHON_LAUNCH,
+    ).replace(
+        "__SERVED_MODEL_NAME__",
+        DEFAULT_MODEL_NAME,
     )
     result = _run_remote_bash(remote_script)
     _raise_on_failure(result, "vLLM stop")
@@ -284,25 +432,47 @@ def run_vllm_benchmark(
     prompt: str,
     profile: str = DEFAULT_PROFILE,
     max_new_tokens: int | None = None,
-    warmup_requests: int = 1,
+    baseline_mode: str = DEFAULT_VLLM_BASELINE_MODE,
+    baseline_runs: int = DEFAULT_VLLM_BASELINE_RUNS,
 ) -> dict[str, Any]:
+    normalized_mode = baseline_mode.strip().lower()
+    if normalized_mode not in {"plain", "best"}:
+        raise ValueError("baseline_mode must be one of: plain, best")
+    run_count = 1 if normalized_mode == "plain" else max(1, int(baseline_runs))
+
     env = {
         "PROFILE": profile,
         "SYSTEM_LABEL": "vllm",
-        "VARIANT_LABEL": "openai",
+        "VARIANT_LABEL": f"{normalized_mode}_openai",
         "MODEL_NAME": DEFAULT_MODEL_NAME,
         "BASE_URL": "http://127.0.0.1:8000",
         "PROMPT_OVERRIDE": prompt,
+        "TEMPERATURE": str(DEFAULT_SAMPLING_TEMPERATURE),
+        "IGNORE_EOS": "1" if DEFAULT_IGNORE_EOS else "0",
         "SKIP_REMOTE_SYNC": "1",
     }
     if max_new_tokens is not None:
         env["MAX_NEW_TOKENS_OVERRIDE"] = str(max_new_tokens)
-    for _ in range(max(0, warmup_requests)):
-        warmup_result = _run_shell_script("remote_openai_backend_benchmark.sh", env=env)
-        _raise_on_failure(warmup_result, "vLLM warmup benchmark")
-    result = _run_shell_script("remote_openai_backend_benchmark.sh", env=env)
-    _raise_on_failure(result, "vLLM benchmark")
-    return _extract_last_json(result.stdout)
+
+    runs: list[dict[str, Any]] = []
+    for _ in range(run_count):
+        result = _run_shell_script("remote_openai_backend_benchmark.sh", env=env)
+        _raise_on_failure(result, "vLLM benchmark")
+        runs.append(_extract_last_json(result.stdout))
+    if not runs:
+        raise RuntimeError("vLLM baseline benchmark produced no results")
+
+    def _score(payload: dict[str, Any]) -> float:
+        value = payload.get("generated_tokens_per_second")
+        if value is None:
+            return float("-inf")
+        return float(value)
+
+    selected = max(runs, key=_score) if normalized_mode == "best" else runs[0]
+    selected["baseline_mode"] = normalized_mode
+    selected["baseline_runs"] = run_count
+    selected["baseline_candidates_tokens_per_second"] = [run.get("generated_tokens_per_second") for run in runs]
+    return selected
 
 
 def run_leanstack_benchmark(
@@ -327,6 +497,7 @@ def run_leanstack_benchmark(
         "SPECULATIVE": "0",
         "PROMPT_OVERRIDE": prompt,
         "PROMPT_FORMAT_OVERRIDE": "raw",
+        "IGNORE_EOS": "1" if DEFAULT_IGNORE_EOS else "0",
         "RESIDENT_REQUESTS": str(resident_requests),
         "WARMUP_REQUESTS": str(warmup_requests),
         "SKIP_REMOTE_SYNC": "1",
@@ -343,6 +514,8 @@ def build_comparison_payload(
     prompt: str,
     profile: str = DEFAULT_PROFILE,
     max_new_tokens: int | None = None,
+    vllm_baseline_mode: str = DEFAULT_VLLM_BASELINE_MODE,
+    vllm_baseline_runs: int = DEFAULT_VLLM_BASELINE_RUNS,
 ) -> dict[str, Any]:
     if profile != DEFAULT_PROFILE:
         raise RuntimeError(
@@ -350,13 +523,24 @@ def build_comparison_payload(
         )
     status = check_remote_status()
     if not status.get("download_complete"):
-        raise RuntimeError("Qwen3-1.7B-Base checkpoint is not fully downloaded on the remote machine yet.")
+        raise RuntimeError("Qwen3-4B-Base checkpoint is not fully downloaded on the remote machine yet.")
     if not status.get("pack_ready"):
         raise RuntimeError(f"leanpack artifact is not ready at {DEFAULT_PACK_DIR}.")
     vllm_status = ensure_vllm_ready()
-    vllm = run_vllm_benchmark(prompt=prompt, profile=profile, max_new_tokens=max_new_tokens)
+    vllm = run_vllm_benchmark(
+        prompt=prompt,
+        profile=profile,
+        max_new_tokens=max_new_tokens,
+        baseline_mode=vllm_baseline_mode,
+        baseline_runs=vllm_baseline_runs,
+    )
     stop_status = stop_vllm()
     leanstack = run_leanstack_benchmark(prompt=prompt, profile=profile, max_new_tokens=max_new_tokens)
+    fairness = validate_comparison_fairness(
+        vllm=vllm,
+        leanstack=leanstack,
+        expected_max_new_tokens=max_new_tokens,
+    )
 
     vllm_tps = vllm.get("generated_tokens_per_second")
     leanstack_tps = (leanstack.get("throughput") or {}).get("runtime_tokens_per_second")
@@ -376,9 +560,15 @@ def build_comparison_payload(
             "hardware": OFFICIAL_HARDWARE,
             "strict_packed": True,
             "strict_contract": True,
+            "vllm_baseline_mode": vllm_baseline_mode,
+            "vllm_baseline_runs": vllm_baseline_runs,
+            "decode_policy": DEFAULT_DECODE_POLICY,
+            "temperature": DEFAULT_SAMPLING_TEMPERATURE,
+            "ignore_eos": DEFAULT_IGNORE_EOS,
         },
         "vllm_status": vllm_status,
         "vllm_stop_status": stop_status,
+        "fairness_gate": fairness,
         "profile": profile,
         "prompt": prompt,
         "vllm": vllm,

@@ -129,6 +129,9 @@ function renderComparison(result) {
 
   elements.throughputRatio.textContent = formatRatio(result.delta.runtime_tokens_per_second_ratio);
   elements.latencyRatio.textContent = formatRatio(result.delta.prefill_to_vllm_ttft_ratio);
+  const baselineMode = vllm.baseline_mode || "plain";
+  const baselineRuns = vllm.baseline_runs || 1;
+  elements.activityLog.textContent = `Comparison complete. vLLM baseline=${baselineMode}, runs=${baselineRuns}.`;
 }
 
 async function compare() {
@@ -154,7 +157,6 @@ async function compare() {
       body: JSON.stringify(body),
     });
     renderComparison(payload.result);
-    elements.activityLog.textContent = "Comparison complete.";
   } catch (error) {
     elements.activityLog.textContent = String(error);
   } finally {

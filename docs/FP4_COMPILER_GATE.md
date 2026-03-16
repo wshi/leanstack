@@ -1,6 +1,6 @@
 # FP4 Compiler Gate
 
-Date verified: 2026-03-07
+Date verified: 2026-03-12
 
 ## Why this gate exists
 
@@ -65,11 +65,18 @@ This repo now exposes the gate directly through:
 - `experiments/cutile/fp4_compiler_gate.py`
 - `scripts/remote_fp4_gate.sh`
 
-Current remote result on 2026-03-07:
+Current remote result on 2026-03-12:
 
 - status: `blocked`
 - blocker: `public cuda.tile frontend does not expose a complete FP4 authoring surface`
 - backend target availability: `sm_121` is present in `tileiras`
+- current remote `cuda-tile` version after upgrade: `1.2.0`
+- observed delta from `1.1.0 -> 1.2.0`:
+  - `datatype_mentions_fp4`: `false -> true`
+  - `public_has_fp4_symbol`: still `false`
+  - `bytecode_mentions_fp4`: still `false`
+
+See `/Users/wei/work/spark/leanstack/docs/FP4_STACK_DIFF_20260312.md` for the full before/after report and artifact paths.
 
 That means the gate is no longer documentation-only. It is an executable check whose current answer is negative.
 

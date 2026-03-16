@@ -212,7 +212,7 @@ def _resolve_cases(keys: list[str] | None) -> list[HotKernelCase]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Benchmark BF16 Qwen3-1.7B hot kernels through cuTile.")
+    parser = argparse.ArgumentParser(description="Benchmark BF16 Qwen3-4B hot kernels through cuTile.")
     parser.add_argument("--cases", nargs="*", help="Specific hot-kernel case keys to run.")
     parser.add_argument("--warmup", type=int, default=3)
     parser.add_argument("--repeats", type=int, default=10)
@@ -237,7 +237,7 @@ def main() -> int:
             raise ValueError(f"unsupported kernel kind: {case.kernel_kind}")
 
     payload = {
-        "suite": "qwen3_1.7b_bf16_hot_kernels",
+        "suite": "qwen3_4b_bf16_hot_kernels",
         "model_id": cases[0].model_id if cases else "unknown",
         "dtype": cases[0].dtype if cases else "unknown",
         "gpu_name": torch.cuda.get_device_name(torch.cuda.current_device()),

@@ -25,6 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--exact-prompt-tokens", type=int, default=0)
     parser.add_argument("--max-new-tokens", type=int, default=32)
     parser.add_argument("--temperature", type=float, default=0.0)
+    parser.add_argument("--ignore-eos", action="store_true")
     parser.add_argument("--api-key", default="EMPTY")
     parser.add_argument("--request-timeout", type=float, default=600.0)
     parser.add_argument("--output")
@@ -56,6 +57,7 @@ def run_streaming_completion(
     prompt: str,
     max_new_tokens: int,
     temperature: float,
+    ignore_eos: bool,
     api_key: str,
     timeout: float,
 ) -> dict[str, Any]:
@@ -67,6 +69,8 @@ def run_streaming_completion(
         "stream": True,
         "stream_options": {"include_usage": True},
     }
+    if ignore_eos:
+        payload["ignore_eos"] = True
     req = urllib.request.Request(
         f"{_normalize_base_url(base_url)}/v1/completions",
         data=json.dumps(payload).encode("utf-8"),
@@ -118,6 +122,7 @@ def run_non_streaming_completion(
     prompt: str,
     max_new_tokens: int,
     temperature: float,
+    ignore_eos: bool,
     api_key: str,
     timeout: float,
 ) -> dict[str, Any]:
@@ -128,6 +133,8 @@ def run_non_streaming_completion(
         "temperature": temperature,
         "stream": False,
     }
+    if ignore_eos:
+        payload["ignore_eos"] = True
     start = time.perf_counter()
     _, _, body = _post_json(
         f"{_normalize_base_url(base_url)}/v1/completions",
@@ -176,6 +183,7 @@ def main() -> int:
             prompt=prompt,
             max_new_tokens=args.max_new_tokens,
             temperature=args.temperature,
+            ignore_eos=args.ignore_eos,
             api_key=args.api_key,
             timeout=args.request_timeout,
         )
@@ -185,6 +193,7 @@ def main() -> int:
             prompt=prompt,
             max_new_tokens=args.max_new_tokens,
             temperature=args.temperature,
+            ignore_eos=args.ignore_eos,
             api_key=args.api_key,
             timeout=args.request_timeout,
         )
@@ -221,6 +230,8 @@ def main() -> int:
         "finish_reason": stream_result["finish_reason"] or non_stream_result["finish_reason"],
         "generated_text": non_stream_result["generated_text"] or stream_result["generated_text"],
         "usage_source": "stream" if stream_result.get("usage") is not None else "non_stream_fallback",
+        "temperature": args.temperature,
+        "ignore_eos": bool(args.ignore_eos),
     }
 
     payload = json.dumps(result, indent=2)

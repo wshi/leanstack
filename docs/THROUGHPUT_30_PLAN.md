@@ -1,310 +1,68 @@
 # Throughput 30% Plan
 
-Date verified: 2026-03-09
+Date verified: 2026-03-16
 
-## Hard target
+## Target
 
-The project now has a stronger success bar than "slightly beat `vLLM`."
+Primary success criterion:
 
-The new bar is:
-
-- beat warmed `vLLM` by at least `30%` on the primary official decode profile
-- keep the claim on the fixed contract:
-  - model: `Qwen/Qwen3-1.7B-Base`
-  - checkpoint: exact BF16 snapshot
+- `leanstack generated tok/s >= 1.30x warmed vLLM(best)` on fixed contract:
+  - model: `Qwen/Qwen3-4B-Base`
   - hardware: `GB10 / sm_121`
-  - backend: official path stays `cuTile -> TileIR -> cubin`
+  - profile: `decode_64_256`
+  - decode: greedy
+  - stop: fixed length (`ignore_eos=true`)
 
-Current measured facts on `decode_64_256`:
+## Current baseline
 
-- warmed `vLLM`: about `46.06 tok/s`
-- current packed `leanpack -> leanserve` path: about `46.25 tok/s`
+Latest fixed-contract run:
 
-So the new target number is:
+- vLLM(best-of-3): `20.3906 tok/s`
+- leanstack: `20.9911 tok/s`
+- ratio: `1.0294x`
 
-- `46.06 * 1.30 = 59.88 tok/s`
+Derived target:
 
-The current packed path is still about `13.63 tok/s` below that bar.
+- target throughput: `26.5078 tok/s`
+- remaining gap: `5.5167 tok/s`
 
-## First-principles conclusion
+## First-principles implication
 
-This target will not be reached by more runtime glue cleanup.
+The remaining gap is too large for minor cleanup.
 
-It also probably will not be reached by packing alone.
+Priority must stay on changes that reduce one of:
 
-The remaining gap is too large to explain with:
+1. bytes moved per token
+2. launches per token
+3. non-kernel software overhead per token
 
-- Python dispatch cleanup
-- one more cache rewrite
-- one more fused helper around eager PyTorch math
-- one more small resident-service improvement
+## Execution tracks
 
-To reach `~60 tok/s`, the project needs a stronger asymmetry than "the stack is simpler."
+### Track A: service/runtime overhead minimization
 
-That asymmetry must reduce one of these terms:
+- static resident decode process
+- fixed-shape request contract
+- remove dynamic control paths in steady-state loop
+- keep fairness gate hard-enabled
 
-- bytes moved per emitted token
-- decisive kernels launched per emitted token
-- number of full-model decode steps per committed token
+### Track B: hot-kernel path strengthening (cuTile)
 
-Only the third term is likely to create a `30%+` jump on top of a packed BF16 appliance.
+- ensure decisive decode kernels stay on cuTile/TileIR
+- fuse decode-local epilogues where contract-safe
+- remove fallback eager paths on hot steps
 
-## What is likely insufficient
+### Track C: protocol integrity
 
-These items are still worth doing, but they are not the main route to `1.3x`:
+- compare only with fairness gate pass
+- report plain and best vLLM explicitly
+- fail fast on prompt/generation mismatch
 
-- finish all remaining BF16 decode kernels on `cuTile`
-- replace the last eager `down_proj`, `kv_proj`, and logits paths
-- make the resident service more static
-- improve graph capture and bucket planning
+## Go/No-Go checkpoints
 
-Engineering judgment:
+1. `>=1.10x` sustained on fixed contract: continue current path.
+2. `>=1.20x` requires at least one material asymmetry win (kernel or service path).
+3. `<1.10x` after multiple cycles: pause and redesign, do not burn more tuning cycles on low-leverage edits.
 
-- this BF16 appliance work may move the stack from `46.25 tok/s` into roughly the low-`50s`
-- that is useful and still required
-- but it is not a credible standalone route to `~60 tok/s`
+## Rule to avoid wasted time
 
-## The required asymmetry
-
-The required new asymmetry is:
-
-- exact speculative decode on a fixed model-chip appliance
-
-That means:
-
-- propose multiple tokens cheaply
-- verify them exactly with the full model
-- commit only verified tokens
-- keep final output identical to the base model
-
-This is the only currently credible route to a `30%+` throughput jump while preserving exact semantics.
-
-## First implementation result
-
-Date confirmed: 2026-03-09
-
-The repo now has a first executable exact self-speculative loop:
-
-- one packed artifact
-- one draft runtime
-- one verifier runtime
-- proposal / verify / commit accounting
-
-The current implementation uses a simple early-exit draft:
-
-- the draft proposes tokens from a prefix of the base model using the shared final norm and tied output head
-- the verifier runs the remaining layers exactly
-
-This means the first implementation is valid as an appliance experiment, but it is still a weak draft model.
-
-Initial smoke results on a short `16-token` decode:
-
-- `draft=12`, `k=4`:
-  - acceptance ratio: about `3.7%`
-  - committed tokens per cycle: about `1.07`
-- `draft=20`, `k=2`:
-  - acceptance ratio: about `22.7%`
-  - committed tokens per cycle: about `1.45`
-- `draft=24`, `k=2`:
-  - acceptance ratio: about `36.8%`
-  - committed tokens per cycle: about `1.60`
-
-After adding:
-
-- block verifier execution instead of token-by-token verifier decode
-- auxiliary draft heads packed into `leanpack`
-- cursor-only cache rollback
-
-the exact-bucket `decode_64_256` results are now:
-
-- `draft=24`, `k=2`, auxiliary head:
-  - acceptance ratio: about `90.7%`
-  - committed tokens per cycle: about `2.81`
-  - throughput: about `40.8 tok/s`
-- `draft=24`, `k=4`, auxiliary head:
-  - acceptance ratio: `100%`
-  - committed tokens per cycle: about `4.92`
-  - throughput: about `43.9 tok/s`
-- decode-calibrated shallow draft heads still remain weak on the main profile:
-  - `draft=8`, `k=2`: about `25.7 tok/s`
-  - `draft=12`, `k=2`: about `16.8 tok/s`
-  - `draft=16`, `k=2`: about `16.1 tok/s`
-
-Interpretation:
-
-- the loop works
-- block verification materially improved the speculative path
-- but even a perfect-acceptance `24+4` split is still slower than the packed non-spec appliance
-- the repo now has evidence that "split one model into draft+verifier" is not enough for a `30%` target on this workload
-
-So the next speculative work is not "optimize this exact draft harder."
-
-It is:
-
-- accept that a stronger asymmetry is required than a same-model prefix/suffix split
-- move toward a genuinely smaller draft artifact or draft model, still fixed to the same workload contract
-
-## Official strategy
-
-The project should now split into two coupled tracks.
-
-### Track A: BF16 appliance ceiling
-
-Goal:
-
-- push the exact non-speculative packed appliance as far as it can go
-
-Purpose:
-
-- create the strongest possible verifier path
-- establish the real BF16 non-spec ceiling
-- reduce the amount of work the speculative verifier must do
-
-Required work:
-
-- `cuTile` decode kernels for `kv_proj`, `down_proj`, and logits
-- fused decode epilogues where the model contract allows them
-- more static per-bucket decode graphs
-- zero hidden fallback to public checkpoint staging on the serving path
-
-Track-A go/no-go gate:
-
-- if the packed BF16 appliance cannot reach at least `52 tok/s`, the repo should assume a `30%` final win is very unlikely without changing the algorithmic path
-
-### Track B: Exact self-speculative appliance
-
-Goal:
-
-- reduce full-model decode steps per committed token
-
-Principle:
-
-- do not introduce an unrelated second model first
-- exploit the fixed `Qwen3-1.7B-Base` contract itself
-
-First implementation result:
-
-- early-exit self-speculative decode with a prefix-layer draft and suffix verifier is now implemented and benchmarked
-- it is a useful control experiment, but not a sufficient final design
-
-Why the repo now needs a different speculative design:
-
-- with a same-model split, every committed token still pays for the draft layers plus the verifier layers
-- block verification improves GPU efficiency, but it does not remove the full-model layer budget
-- once the `24+4` split reaches `100%` acceptance and still trails the packed non-spec path, the remaining headroom is too small for a `30%` target
-
-So the next design candidate should be:
-
-- a second packed draft artifact that is genuinely smaller than the verifier model, while remaining fixed to the same Qwen/GB10 appliance contract
-
-## Leanpack v1.5 requirements
-
-`leanpack` must evolve from "packed weights" into "packed serving program input."
-
-That means the artifact should carry:
-
-- packed full-model weights
-- packed draft-path weights or layer ranges
-- per-bucket draft lengths, such as `2-token` and `4-token` proposal modes
-- verifier metadata
-- rollback metadata
-- graph-shape manifests for both draft and verify paths
-
-The artifact should be able to answer:
-
-- which layers are draft layers
-- which layers are verifier-only layers
-- which exact buckets are legal
-- which proposal lengths are legal per bucket
-
-## Leanserve v1.5 requirements
-
-`leanserve` should evolve from "resident exact decode service" into "resident exact decode appliance."
-
-That means:
-
-- exact-bucket admission
-- one resident verifier
-- one resident draft path
-- proposal/verify/commit loop in GPU-friendly chunks
-- exact rollback when a proposal token is rejected
-
-The appliance should expose and log:
-
-- proposed tokens per cycle
-- accepted tokens per cycle
-- acceptance ratio
-- committed tokens per verifier pass
-- verifier time per committed token
-
-## Quantitative gates
-
-The project should now use these gates.
-
-### Gate 1: BF16 exact appliance
-
-Primary profile:
-
-- `decode_64_256`
-
-Required result:
-
-- `>= 52 tok/s`
-
-Reason:
-
-- below this number, the exact verifier path is too weak to support a strong speculative appliance
-
-### Gate 2: Self-spec viability
-
-On the same primary profile:
-
-- average committed tokens per verifier pass must exceed `1.7`
-- average acceptance ratio should exceed `0.70`
-
-Reason:
-
-- below that range, the extra draft path complexity is unlikely to buy a `30%` end-to-end win
-
-### Gate 3: Official success claim
-
-Primary profile:
-
-- `decode_64_256`
-
-Required result:
-
-- `leanstack >= 1.30x warmed vLLM`
-
-With current known baseline:
-
-- target is `>= 59.88 tok/s`
-
-Secondary rule:
-
-- do not allow a major regression on `decode_64_512`
-- do not hide a large memory increase or a much more complex process shape
-
-## Engineering order
-
-1. Finish the packed BF16 appliance path enough to establish a real non-spec ceiling.
-2. Build a draft/verifier split for self-speculative decode.
-3. Add appliance metrics for proposal, verification, commit, and rollback.
-4. Benchmark `decode_64_256` and `decode_64_512`.
-5. Only then decide whether the `30%` claim is reachable on the official `cuTile` path.
-
-## Failure mode to state explicitly
-
-If the repo cannot exceed warmed `vLLM` by `30%` on the fixed contract after:
-
-- packed weights
-- resident appliance
-- decisive `cuTile` decode kernels
-- exact self-speculative decode
-
-then the correct conclusion is not "optimize harder."
-
-The correct conclusion is:
-
-- under the public `cuTile` surface and this exact BF16 Qwen contract, the compatibility tax was not the dominant bottleneck
-- the remaining bottleneck was algorithmic efficiency and kernel maturity, not framework complexity alone
+Any optimization without projected impact on `decode_64_256 generated tok/s` should be deprioritized.

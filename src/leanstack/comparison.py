@@ -28,7 +28,7 @@ COMPARISON_STAGES: tuple[ComparisonStage, ...] = (
         name="Stage 0",
         question="What is the exact-checkpoint throughput ceiling on GB10 before leanstack enters the comparison?",
         scope=(
-            "Run `Qwen/Qwen3-1.7B-Base` BF16 on the same remote GB10 with identical prompts and decode limits.",
+            "Run `Qwen/Qwen3-4B-Base` BF16 on the same remote GB10 with identical prompts and decode limits.",
             "Collect exact-checkpoint baselines from `transformers`, `vLLM`, and `SGLang` when each can run the same BF16 snapshot.",
             "Use single-request, non-thinking, deterministic decode first. Concurrency stays deferred until the single-stream path is stable.",
         ),
@@ -42,10 +42,10 @@ COMPARISON_STAGES: tuple[ComparisonStage, ...] = (
     ),
     ComparisonStage(
         name="Stage 1",
-        question="Can the decisive Qwen3-1.7B kernels stay competitive when authored through cuTile/TileIR?",
+        question="Can the decisive Qwen3-4B kernels stay competitive when authored through cuTile/TileIR?",
         scope=(
             "Microbenchmark QKV GEMM, O projection, gate/up projection, down projection, RMSNorm, RoPE, and decode attention.",
-            "Keep tensor shapes fixed to the Qwen3-1.7B contract on GB10/sm_121.",
+            "Keep tensor shapes fixed to the Qwen3-4B contract on GB10/sm_121.",
             "Compare cuTile kernels against the closest torch/cuBLAS-backed reference implementation for the same tensor shape.",
         ),
         metrics=(
@@ -74,17 +74,19 @@ COMPARISON_STAGES: tuple[ComparisonStage, ...] = (
         name="Stage 3",
         question="Does the full specialized stack beat framework baselines on the fixed model-chip contract?",
         scope=(
-            "Run full `leanstack` against `vLLM` and `SGLang` on the same Qwen3-1.7B-Base BF16 checkpoint.",
-            "Use the agreed benchmark profiles and report both cold and hot runs.",
+            "Run full `leanstack` against `vLLM` and `SGLang` on the same Qwen3-4B-Base BF16 checkpoint.",
+            "Use the agreed benchmark profiles and report plain and best-performance `vLLM` baselines.",
             "Only count this as official evidence if the hot path remains on the cuTile/TileIR backend.",
+            "Enforce fairness gate: matched prompt tokens, matched generated tokens, greedy decode, and fixed-length stopping.",
         ),
         metrics=(
             "cold TTFT",
-            "hot TTFT",
-            "median decode tokens/s over repeated hot runs",
+            "plain vLLM TTFT",
+            "best vLLM decode tokens/s over repeated runs",
             "median end-to-end tokens/s",
             "peak GPU memory",
             "process shape and launch complexity",
+            "fairness gate pass/fail",
         ),
         gate="A full-table result exists and clearly shows whether leanstack wins, loses, or remains incomplete on the fixed contract.",
     ),

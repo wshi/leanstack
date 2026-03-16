@@ -1,216 +1,126 @@
 # Comparison Protocol
 
-Date verified: 2026-03-12
+Date verified: 2026-03-16
 
 ## Goal
 
-The comparison must answer one narrow question:
+The official claim must answer one narrow question:
 
-Can a `cuTile/TileIR`-native stack for `Qwen/Qwen3-1.7B-Base` on `GB10 / sm_121` beat compatibility-heavy frameworks on throughput while staying simpler?
+Can a `cuTile/TileIR`-native leanstack for `Qwen/Qwen3-4B-Base` on `GB10 / sm_121` deliver at least `1.30x` warmed `vLLM` throughput on `decode_64_256`, with lower stack complexity and without protocol mismatch?
 
-The stronger current version of that question is:
+## Fixed contract (official claim only)
 
-Can it beat warmed `vLLM` by at least `30%` on the primary official decode profile?
-
-## Fixed contract
-
-- model: `Qwen/Qwen3-1.7B-Base`
-- checkpoint: exact BF16 snapshot used by every system under test
-- hardware: one remote GB10 under `/home/pto/lean`
-- decode mode: non-thinking
-- sampling: deterministic
-- backend for official `leanstack` claims: `cuTile -> TileIR -> cubin`
-- official claim profile: `decode_64_256`
-- official serving mode: strict packed appliance (`leanpack` manifest required)
+- model: `Qwen/Qwen3-4B-Base`
+- checkpoint: exact BF16 snapshot (same bytes for all systems under test)
+- hardware: one remote GB10 host under `/home/pto/lean`
+- profile: `decode_64_256`
+- runtime mode: non-thinking
+- decode policy: greedy (`temperature=0.0`)
+- stopping policy: fixed-length decode (`ignore_eos=true`, emit exactly `max_new_tokens`)
+- official leanstack backend: `cuTile -> TileIR -> cubin`
+- serving artifact: strict packed appliance (`leanpack` manifest required)
 
 Result labels:
 
-- `fixed-contract`: all contract fields above unchanged; eligible for thesis claims
-- `exploratory`: any deviation (different profile, speculative path, alternate model); useful for direction, not thesis evidence
+- `fixed-contract`: all fields above satisfied; eligible for thesis-level claim
+- `exploratory`: any deviation; useful for direction only
 
-## Why the protocol is staged
+## Mandatory fairness gate (hard fail)
 
-An immature full-model runtime should not be compared directly to mature frameworks and then treated as dispositive.
+A comparison run is invalid if any of the following fails:
 
-So the protocol is staged:
+1. prompt tokens match exactly between systems
+2. generated tokens match exactly between systems
+3. generated tokens equal target `max_new_tokens`
+4. decode policy is greedy on both sides
+5. stopping policy is fixed-length (`ignore_eos=true`) on both sides
 
-1. establish exact-checkpoint framework baselines
-2. verify decisive cuTile kernels in isolation
-3. verify leanstack runtime slices
-4. only then make a full end-to-end claim
+If fairness fails, the run must not enter summary tables.
 
-## Stage 0: Exact-checkpoint baselines
+## Stage order (go/no-go)
 
-Systems:
+1. Stage 0: exact-checkpoint framework baselines (`vLLM`, optional `SGLang`/`transformers`)
+2. Stage 1: decisive cuTile hot kernels
+3. Stage 2: leanstack runtime slices (block/prefill/decode)
+4. Stage 3: fixed-contract full-stack comparison
 
-- `transformers`
-- `vLLM`
-- `SGLang`
+No stage skipping for official claim data.
 
-Profiles:
+## Stage 0: baseline requirements
 
-- `decode_64_256`
-- `decode_64_512`
-- `prefill_1024_64`
+- run same model/checkpoint/profile/prompt bucket
+- report cold + hot throughput
+- for vLLM report both:
+  - `plain`: single run
+  - `best`: best of repeated runs (default 3; report candidates)
 
-Prompt-bucket rule:
+Main throughput baseline for claim = warmed `vLLM best`.
 
-- every profile must use an exact prompt-token bucket, not just a `max_prefill_tokens` cap
-- result payloads must record both `target_prompt_tokens` and actual `prompt_tokens`
-- any run where these diverge is invalid for the main claim table
+## Stage 1: kernel requirements
 
-Report:
+Decisive kernels must be benchmarked on exact Qwen3-4B geometry:
 
-- cold TTFT
-- hot TTFT
-- median decode tokens/s across repeated hot runs
-- median end-to-end tokens/s
-- peak GPU memory
-
-Rule:
-
-- if a framework cannot run the exact checkpoint, mark the mismatch explicitly and keep that result outside the main claim table
-
-## Stage 1: cuTile kernel comparisons
-
-The decisive kernels should be benchmarked before the full-model claim:
-
-- Q projection GEMM
-- K/V projection GEMM
-- O projection GEMM
-- gate/up projection GEMM
-- down projection GEMM
+- Q/KV/O projection
+- gate/up and down projection
 - RMSNorm
 - RoPE
-- decode attention
+- decode attention path
 
-First executable bundle for `Qwen3-1.7B-Base` BF16:
+Each kernel entering official path must have:
 
-- `q_proj_prefill64`
-- `kv_proj_prefill64`
-- `o_proj_prefill64`
-- `gate_up_proj_prefill64`
-- `down_proj_prefill64`
-- `rmsnorm_prefill64`
+- shape-locked benchmark result
+- cubin artifact
+- SASS inspection record
 
-Execution path:
+## Stage 2: runtime-slice requirements
 
-- `PYTHONPATH=src python3 -m leanstack.cli list-hot-kernel-cases --default-only`
-- `./scripts/remote_qwen_hot_kernel_bench.sh`
-
-Comparison rule:
-
-- compare each cuTile kernel against the closest local torch reference for the exact tensor shape
-- keep tensor shapes fixed to the `Qwen3-1.7B-Base` contract
-- inspect generated cubin and SASS for every hot kernel that enters the official path
-
-These kernel results are not the final product claim, but they are the only credible way to know whether the backend is on track.
-
-## Stage 2: Runtime-slice comparisons
-
-Before a full end-to-end comparison, measure these `leanstack` slices:
+Before full-stack claims, leanstack must show stable:
 
 - single-block forward
 - prefill slice
 - decode slice
 
-Rule:
+with GPU-resident placement and no hidden CPU offload.
 
-- keep placement GPU-resident
-- forbid CPU offload
-- report slice latency and allocated GPU memory
+## Stage 3: official claim table
 
-If these slices are not stable, the project should not claim anything from a full-model table.
+Required fields:
 
-## Stage 3: Full-stack comparison
-
-Only after Stages 0-2 are stable:
-
-- run `leanstack` full path
-- run `vLLM`
-- run `SGLang`
-- keep model, prompt profile, and decode budget identical
-
-The official claim table should contain:
-
-- cold TTFT
-- hot TTFT
-- median decode tokens/s
-- median end-to-end tokens/s
-- peak GPU memory
-- process count
-- launch/config complexity notes
-
-## Repetition policy
-
-For each profile:
-
-- 1 cold run after process start
-- at least 5 hot runs on the same loaded process
-- report median hot values
+- TTFT / prefill latency
+- generated tokens/s (primary)
+- end-to-end tokens/s
+- peak memory
+- process/launch complexity summary
+- fairness-gate status
 
 ## Stop conditions
 
-Do not make a positive performance claim unless all of the following are true:
+Do not claim performance advantage unless all are true:
 
-1. the exact-checkpoint framework baselines exist
-2. the decisive hot kernels are on the cuTile path
-3. the runtime slices are stable and GPU-resident
-4. the full-model result beats at least one framework on a key throughput metric without hiding a major memory or complexity regression
+1. fairness gate passes
+2. fixed-contract fields are unchanged
+3. hot path stays on official backend policy
+4. repeated hot-run result is stable
 
-Do not make a strong thesis claim unless all of the following are true:
+Do not claim thesis success unless:
 
-1. the packed appliance path reaches `>= 1.30x` warmed `vLLM` on `decode_64_256`
-2. the result survives repeated hot runs
-3. the result does not depend on a hidden mismatch in prompt buckets, checkpoint format, or stopping rules
+`leanstack generated tok/s >= 1.30 * warmed vLLM(best) generated tok/s` on `decode_64_256`.
 
-## First measured outcome
+## Current status (for planning)
 
-Date confirmed: 2026-03-07
+Latest fixed-contract run on 2026-03-16:
 
-The first exact-checkpoint whole-model data point now exists for `Qwen/Qwen3-1.7B-Base` on the remote GB10:
+- vLLM(best-of-3): `20.3906 tok/s`
+- leanstack: `20.9911 tok/s`
+- ratio: `1.0294x`
 
-- warmed `vLLM` on `decode_64_256`: about `46.40 generated tok/s`
-- current `leanstack` semantic full runtime on `decode_64_256`: about `44.61 runtime tok/s`
+Current gap to thesis bar:
 
-After correcting the prompt contract to an exact `64-token` bucket on 2026-03-09:
+- target = `26.5078 tok/s`
+- remaining gap = `5.5167 tok/s`
 
-- warmed `vLLM` on `decode_64_256`: about `46.06 generated tok/s`, `prompt_tokens=64`
-- current `leanstack` semantic full runtime on `decode_64_256`: about `44.54 runtime tok/s`, `prompt_tokens=64`
-- current `leanstack` packed `leanpack -> leanserve` path on `decode_64_256`: about `46.25 runtime tok/s`, `prompt_tokens=64`
+Conclusion:
 
-So the benchmark-first conclusion is no longer negative for the main steady-state decode target, but it is still not strong enough:
-
-- the packed appliance path has now cleared the warmed-framework throughput bar, but only narrowly
-- the margin is still too small to support a strong claim about the superiority of the specialized stack
-- it is therefore not enough to say that ownership is solved; the next work must target the remaining decode hot spots directly and widen the lead
-
-Numerically, with the current known warmed `vLLM` number on `decode_64_256`:
-
-- baseline: `46.06 tok/s`
-- `30%` target: `59.88 tok/s`
-- current packed appliance: `46.25 tok/s`
-
-So the active gap is no longer "beat vLLM at all."
-The active gap is now "find another `13.63 tok/s`."
-
-The current repo still has positive intermediate evidence:
-
-- cold first-request `vLLM` is much slower than the loaded specialized loop
-- the `16-token` UI smoke also favors `leanstack`
-
-But those are not the deciding metrics for the main claim. The deciding metric remains warmed full-model decode throughput.
-
-## Asymmetry Rule
-
-`leanstack` should not expect to win by rebuilding a generic runtime with fewer abstractions.
-
-It can only win by exploiting invariants that a compatibility-heavy framework cannot lean on as aggressively:
-
-- exact prompt-token buckets for the active claim profiles
-- one model, one chip, one precision policy, one resident process
-- offline-packed checkpoint layout for the exact decode kernels
-- static KV and scratch allocation for the exact request contract
-- cuTile-authored hot kernels that enter the real runtime, not only microbenchmarks
-
-If an optimization does not strengthen one of those asymmetries, it is unlikely to be enough.
+- positive but small lead exists
+- protocol mismatch risk is now controlled by fairness gate
+- next work should focus only on optimizations that can realistically close the remaining `~5.5 tok/s` gap

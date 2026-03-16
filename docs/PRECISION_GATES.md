@@ -1,6 +1,6 @@
 # Precision Gates
 
-Date verified: 2026-03-07
+Date verified: 2026-03-12
 
 ## Why this document exists
 
@@ -34,15 +34,16 @@ Reason:
 
 ## Latest remote result
 
-Date confirmed: 2026-03-07
+Date confirmed: 2026-03-12
 
 The following command completed on the remote GB10:
 
 - `./scripts/remote_precision_gate.sh`
 
-Confirmed artifact:
+Confirmed artifact (latest rerun):
 
-- `/home/pto/lean/artifacts/precision-gate/precision_gate_20260307T083727Z.json`
+- `/home/pto/lean/artifacts/precision-gate/precision_gate_20260307T083727Z.json` (full precision gate)
+- `/home/pto/lean/artifacts/fp4-gate/fp4_gate_20260312T014759Z.json` (post-upgrade FP4 gate on `cuda-tile 1.2.0`)
 
 Confirmed result:
 
@@ -67,6 +68,7 @@ Confirmed result:
 
 - status: blocked
 - the public `cuda.tile` frontend does not expose a complete FP4 authoring surface today
+- after upgrading remote `cuda-tile` from `1.1.0` to `1.2.0`, FP4 remains blocked for the same reason
 - see [FP4_COMPILER_GATE.md](/Users/wei/work/spark/leanstack/docs/FP4_COMPILER_GATE.md) for the narrower sub-gate
 
 ## Current policy

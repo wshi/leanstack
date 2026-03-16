@@ -23,22 +23,22 @@ DEFAULT_PHASES: tuple[PlanPhase, ...] = (
     ),
     PlanPhase(
         name="Phase 2",
-        goal="Map Qwen3-1.7B-Base BF16 checkpoint metadata into an adapter-owned semantic contract and define the future serving artifact format.",
-        exit_gate="The repo can parse the Qwen3-1.7B-Base BF16 checkpoint contract without a monolithic runtime.",
+        goal="Map Qwen3-4B-Base BF16 checkpoint metadata into an adapter-owned semantic contract and define the future serving artifact format.",
+        exit_gate="The repo can parse the Qwen3-4B-Base BF16 checkpoint contract without a monolithic runtime.",
     ),
     PlanPhase(
         name="Phase 3",
         goal="Build `leanpack`: convert the public BF16 checkpoint into serving-only artifacts with exact bucket metadata and kernel-friendly layouts.",
-        exit_gate="A serving artifact exists for Qwen3-1.7B-Base BF16, with packed weights, manifests, and exact prompt-bucket metadata.",
+        exit_gate="A serving artifact exists for Qwen3-4B-Base BF16, with packed weights, manifests, and exact prompt-bucket metadata.",
     ),
     PlanPhase(
         name="Phase 4",
         goal="Build `leanserve`: a static resident decode appliance for the packed artifact on GB10/sm_121.",
-        exit_gate="The resident appliance holds weights, KV, scratch, and exact-bucket decode state on GPU for Qwen3-1.7B-Base BF16.",
+        exit_gate="The resident appliance holds weights, KV, scratch, and exact-bucket decode state on GPU for Qwen3-4B-Base BF16.",
     ),
     PlanPhase(
         name="Phase 5",
-        goal="Benchmark appliance-mode leanstack against warmed external baselines and stop if the specialized appliance still does not show a real advantage.",
+        goal="Benchmark appliance-mode leanstack against plain and best-performance vLLM baselines and stop if the specialized appliance still does not show a real advantage.",
         exit_gate="A first exact-bucket comparison table exists for the packed-appliance path on the same machine, including a go/no-go conclusion.",
     ),
     PlanPhase(

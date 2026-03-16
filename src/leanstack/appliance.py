@@ -31,7 +31,7 @@ class ApplianceReset:
         for item in (
             "build `leanpack` to convert the public checkpoint into serving-only artifacts",
             "build `leanserve` as a static resident decode appliance",
-            "compare appliance-mode leanstack against warmed vLLM only after the exact bucket contract is enforced",
+            "compare appliance-mode leanstack against plain and best-performance vLLM only after the exact bucket contract is enforced",
         ):
             lines.append(f"- {item}")
         return "\n".join(lines)

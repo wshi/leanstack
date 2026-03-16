@@ -16,7 +16,7 @@ if [[ "${SKIP_REMOTE_SYNC:-0}" != "1" ]]; then
     -C "$ROOT_DIR" -cf - . | ssh pto@kb119856792y.vicp.fun -p 33402 'mkdir -p /home/pto/lean/repo && tar -xf - -C /home/pto/lean/repo'
 fi
 
-PACK_DIR=${PACK_DIR:-/home/pto/lean/packed/Qwen__Qwen3-1.7B-Base}
+PACK_DIR=${PACK_DIR:-/home/pto/lean/packed/Qwen__Qwen3-4B-Base}
 PAGE_SIZE=${PAGE_SIZE:-16}
 BATCH_SIZE=${BATCH_SIZE:-1}
 DEVICE=${DEVICE:-cuda:0}

@@ -1,130 +1,75 @@
 # Benchmark Plan
 
-Date: 2026-03-07
+Date verified: 2026-03-16
 
-## Question
+## Core question
 
-Can a `cuTile/TileIR`-native, agent-owned runtime tuned for `Qwen/Qwen3-1.7B-Base` BF16 on `GB10 / sm_121` stay much smaller than current inference frameworks while delivering a real throughput advantage?
+Can a model-chip-fixed stack (`Qwen/Qwen3-4B-Base` + `GB10/sm_121`) beat framework baselines while staying simpler, when measured under a strict fairness contract?
 
-The benchmark is not only about runtime speed.
+## Official benchmark contract
 
-It is also about whether agent-generated, model-chip-specific software can replace a significant amount of compatibility-oriented stack complexity.
+- model: `Qwen/Qwen3-4B-Base` BF16 exact checkpoint
+- hardware: single remote GB10 machine under `/home/pto/lean`
+- primary profile: `decode_64_256`
+- decode policy: greedy (`temperature=0.0`)
+- stopping policy: fixed output length (`ignore_eos=true`)
+- backend policy for official leanstack claims: `cuTile -> TileIR -> cubin`
 
-The first live throughput gate is not the full model. It is a fixed hot-kernel bundle on the exact 1.7B geometry:
+Any deviation is exploratory, not official evidence.
 
-- `q_proj_prefill64`
-- `kv_proj_prefill64`
-- `o_proj_prefill64`
-- `gate_up_proj_prefill64`
-- `down_proj_prefill64`
-- `rmsnorm_prefill64`
+## Systems under test
 
-## Primary systems under test
-
-- `leanstack`
-- `vLLM`
-- `SGLang`
-
-## Secondary reference
-
-- `llama.cpp`
-
-`llama.cpp` is important as a compact-systems reference, but it is not automatically an apples-to-apples throughput baseline because the active target is a BF16 checkpoint on an NVIDIA-specific compiler path, not a generic GGUF deployment.
-
-## Benchmark contract
-
-### Hardware
-
-- same remote machine under `/home/pto/lean`
-- same Blackwell-class GB10 environment
-- same driver and CUDA environment for all framework runs
-
-### Model
-
-- semantic base: `Qwen/Qwen3-1.7B-Base`
-- primary deployment contract: the public `Qwen/Qwen3-1.7B-Base` BF16 checkpoint
-- primary precision path: BF16 on the same checkpoint for every system under test where possible
-- exact model snapshot and framework versions must be recorded in every report
-- if an external baseline cannot run the exact BF16 checkpoint or a byte-identical local copy, the report must mark the format mismatch explicitly
-- the official comparison path keeps hot kernels on `cuTile/TileIR`
-
-### Prompting policy
-
-The primary throughput profile should use Qwen3 in non-thinking mode:
-
-- `enable_thinking=False`
-- deterministic decode for repeatability unless a benchmark explicitly studies sampling
-
-Reason:
-
-- reasoning mode adds highly variable hidden-thought token counts
-- that variance can hide stack effects behind model-behavior effects
+- leanstack
+- vLLM
+- optional secondary: SGLang / transformers (if exact checkpoint path is stable)
 
 ## Primary metrics
 
-- generated tokens per second
-- time to first token
-- end-to-end latency
+- generated tokens/s (primary decision metric)
+- TTFT / prefill latency
+- end-to-end tokens/s
 - peak GPU memory
-- steady-state GPU utilization
-- CPU process count and thread pressure
-- deployment surface area: process shape, launch/config complexity, and runtime dependencies
+- process shape / launch complexity
 
-## Complexity and cost proxies
+## Fairness requirements (hard gate)
 
-The research claim also needs non-throughput metrics:
+Each result row must satisfy:
 
-- dependency count in the serving path
-- number of long-running processes required
-- amount of configuration needed to launch a comparable run
-- code surface that must be touched to specialize the stack for `Qwen3-1.7B-Base` BF16 on GB10
-- agent token budget spent to reach or revise a runnable path, when that information is available from the working session
+1. same prompt-token bucket
+2. same generated token count
+3. generated token count equals `max_new_tokens`
+4. same decode policy (greedy)
+5. same stop policy (`ignore_eos=true`)
 
-These are proxies, not perfect cost measures, but they are necessary if the thesis is that compatibility-heavy stacks carry avoidable overhead.
+Runs failing these checks are invalid for decision making.
 
-## First benchmark profiles
+## Stage execution order
 
-### Active profiles
+1. Stage 0: baseline table (`vLLM plain` + `vLLM best-of-N`)
+2. Stage 1: cuTile hot-kernel bundle
+3. Stage 2: runtime slices (block/prefill/decode)
+4. Stage 3: full fixed-contract table
 
-- `decode_64_256`: primary single-request decode throughput profile
-- `decode_64_512`: longer single-request decode profile
-- `prefill_1024_64`: long-prefill profile
+## Throughput target
 
-## Comparison rules
+Success bar:
 
-### For `vLLM`
+`leanstack >= 1.30x warmed vLLM(best)` on `decode_64_256`.
 
-- use official stable docs and record process shape
-- treat it as a high-performance framework baseline, not a source of core runtime code
-- note where generality or multi-role architecture appears to add operational cost for this narrower target
-- if the tested format is not the exact BF16 checkpoint, mark the mismatch and keep the result separate from exact-format conclusions
+Current reference (2026-03-16):
 
-### For `SGLang`
+- vLLM(best): `20.3906 tok/s`
+- leanstack: `20.9911 tok/s`
+- ratio: `1.0294x`
+- target value: `26.5078 tok/s`
 
-- use official stable docs and record enabled features explicitly
-- disable unrelated features unless they are part of the tested profile
-- note which features are irrelevant to the narrow `Qwen3-1.7B-Base BF16 + GB10` target but still shape operational complexity
-- if the tested format is not the exact BF16 checkpoint, mark the mismatch and keep the result separate from exact-format conclusions
+## Work direction (to avoid wasted cycles)
 
-### For `llama.cpp`
+Only prioritize changes that can move primary throughput materially:
 
-- separate deployment-complexity comparisons from strict throughput comparisons when formats differ
-- use it partly as a compact-systems reference for what a smaller runtime can look like
+- reduce bytes moved/token on decode hot path
+- reduce kernel launches/token with contract-safe fusion
+- reduce framework/service overhead with static resident decode service
+- keep protocol fairness gate green after every change
 
-## Gate before benchmarking
-
-No formal benchmark should be treated as dispositive until the repo clears the BF16 runtime gate:
-
-- the precision gate already says BF16 is the active public-cuTile precision on `sm_121`
-- but performance comparisons are still premature until the 1.7B BF16 runtime stops depending on legacy eager PyTorch math for the hot path
-- use [COMPARISON_PROTOCOL.md](/Users/wei/work/spark/leanstack/docs/COMPARISON_PROTOCOL.md) as the gating order for official claims
-
-## Desired output
-
-Every benchmark report should end with:
-
-1. a normalized table for `leanstack`, `vLLM`, and `SGLang`
-2. a short note on whether `llama.cpp` was comparable in that run
-3. a short section on compatibility tax versus specialization benefit
-4. a conclusion on where `leanstack` won, lost, or remained incomplete
-5. an explanation of which missing kernels, runtime policies, or deferred compatibility features matter most
+Defer or drop work that improves local elegance but cannot shift `decode_64_256` tokens/s.

@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 # Run dual-model speculative decode benchmark:
 #   Draft:    Qwen3-0.6B-Base (packed artifact)
-#   Verifier: Qwen3-1.7B-Base (packed artifact)
+#   Verifier: Qwen3-4B-Base (packed artifact)
 #
 # Usage:
 #   # Default: k=5, decode_64_256 profile
@@ -20,7 +20,7 @@ REMOTE_SCRIPT="${REMOTE_SCRIPT:-$ROOT/../remote.sh}"
 REMOTE_HOME="${REMOTE_HOME:-/home/pto/lean}"
 
 # Verifier (main model)
-MODEL_ID="${MODEL_ID:-Qwen/Qwen3-1.7B-Base}"
+MODEL_ID="${MODEL_ID:-Qwen/Qwen3-4B-Base}"
 MODEL_KEY="${MODEL_ID//\//__}"
 PACK_DIR="${PACK_DIR:-$REMOTE_HOME/packed/$MODEL_KEY}"
 MODEL_PATH_FILE="${MODEL_PATH_FILE:-$REMOTE_HOME/models/$MODEL_KEY.path}"

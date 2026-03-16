@@ -88,13 +88,13 @@ GAP_REGISTRY: dict[str, GapReport] = {
             ),
             GapItem(
                 key="checkpoint-contract",
-                title="Own the Qwen3-1.7B-Base BF16 checkpoint contract",
+                title="Own the Qwen3-4B-Base BF16 checkpoint contract",
                 status="in_progress",
                 current_state=(
-                    "The repo already handles Qwen config and tokenizer metadata well, and the active target is now the public `Qwen/Qwen3-1.7B-Base` BF16 checkpoint."
+                    "The repo already handles Qwen config and tokenizer metadata well, and the active target is now the public `Qwen/Qwen3-4B-Base` BF16 checkpoint."
                 ),
                 target_state=(
-                    "The adapter knows the exact tensor naming, checkpoint layout, and residency assumptions for the BF16 Qwen3-1.7B-Base target without borrowing runtime ownership."
+                    "The adapter knows the exact tensor naming, checkpoint layout, and residency assumptions for the BF16 Qwen3-4B-Base target without borrowing runtime ownership."
                 ),
                 code_surface=(
                     "src/leanstack/model_registry.py",
@@ -102,7 +102,7 @@ GAP_REGISTRY: dict[str, GapReport] = {
                     "scripts/remote_qwen_fetch.sh",
                 ),
                 next_step=(
-                    "Use the existing `Qwen/Qwen3-1.7B-Base` fetch path as the canonical checkpoint source and codify the BF16 tensor contract in the adapter."
+                    "Use the existing `Qwen/Qwen3-4B-Base` fetch path as the canonical checkpoint source and codify the BF16 tensor contract in the adapter."
                 ),
                 risk=(
                     "Without explicit checkpoint ownership, later kernel and residency work will still depend on framework assumptions."
@@ -110,14 +110,14 @@ GAP_REGISTRY: dict[str, GapReport] = {
             ),
             GapItem(
                 key="semantic-retarget",
-                title="Retarget the legacy Qwen semantic path to the 1.7B-Base BF16 contract",
+                title="Retarget the legacy Qwen semantic path to the 4B-Base BF16 contract",
                 status="in_progress",
                 current_state=(
                     "The repo already contains a legacy explicit Qwen path for `Qwen3-32B BF16`, including adapter-owned block semantics, "
                     "explicit weight staging, and a leanstack-owned KV path."
                 ),
                 target_state=(
-                    "The same ownership pattern is ported to `Qwen3-1.7B-Base` BF16, with smaller geometry and a clean checkpoint contract replacing the older 32B assumptions."
+                    "The same ownership pattern is ported to `Qwen3-4B-Base` BF16, with clearer geometry and a clean checkpoint contract replacing the older 32B assumptions."
                 ),
                 code_surface=(
                     "src/leanstack/runtime/qwen_explicit.py",
@@ -125,7 +125,7 @@ GAP_REGISTRY: dict[str, GapReport] = {
                     "experiments/models/qwen_explicit_runtime_loop.py",
                 ),
                 next_step=(
-                    "Shrink the geometry to the 1.7B-Base contract, keep BF16 linears explicit, and preserve `transformers` only as a correctness oracle."
+                    "Retarget geometry to the 4B-Base contract, keep BF16 linears explicit, and preserve `transformers` only as a correctness oracle."
                 ),
                 risk=(
                     "If the old semantic path is copied forward without retargeting the geometry, the repo will keep optimizing the wrong model size."
@@ -139,7 +139,7 @@ GAP_REGISTRY: dict[str, GapReport] = {
                     "The repo now has a real page-table-backed KV manager, but the broader runtime shape is still inherited from the 32B reference work."
                 ),
                 target_state=(
-                    "A smaller residency plan and KV contract are specialized for `Qwen3-1.7B-Base` BF16 on GB10, with static layout decisions and no hidden placement heuristics."
+                    "A dedicated residency plan and KV contract are specialized for `Qwen3-4B-Base` BF16 on GB10, with static layout decisions and no hidden placement heuristics."
                 ),
                 code_surface=(
                     "src/leanstack/runtime/kv_cache.py",
@@ -147,7 +147,7 @@ GAP_REGISTRY: dict[str, GapReport] = {
                     "src/leanstack/runtime/engine.py",
                 ),
                 next_step=(
-                    "Define the 1.7B-Base residency plan, page geometry, and transfer policy around the BF16 checkpoint rather than the larger legacy path."
+                    "Define the 4B-Base residency plan, page geometry, and transfer policy around the BF16 checkpoint rather than the larger legacy path."
                 ),
                 risk=(
                     "If residency and KV layout remain shaped by the 32B reference work, the smaller BF16 target will not realize its expected throughput advantage."
@@ -161,7 +161,7 @@ GAP_REGISTRY: dict[str, GapReport] = {
                     "BF16 compiles and runs through the public cuTile path for the minimal vector-add probe, but the Qwen runtime still relies on eager PyTorch math."
                 ),
                 target_state=(
-                    "A compact BF16 kernel catalog exists for the 1.7B-Base hot path: GEMM, RMSNorm, RoPE, GQA prefill, GQA decode, gated MLP, logits projection, and sampling."
+                    "A compact BF16 kernel catalog exists for the 4B-Base hot path: GEMM, RMSNorm, RoPE, GQA prefill, GQA decode, gated MLP, logits projection, and sampling."
                 ),
                 code_surface=(
                     "src/leanstack/runtime/qwen_explicit.py",
@@ -177,13 +177,13 @@ GAP_REGISTRY: dict[str, GapReport] = {
             ),
             GapItem(
                 key="benchmark-gate",
-                title="Benchmark only after the 1.7B-Base BF16 runtime exists",
+                title="Benchmark only after the 4B-Base BF16 runtime exists",
                 status="in_progress",
                 current_state=(
-                    "The benchmark harness exists, and the precision gate now recommends BF16 as the active target, but the runtime is not yet rebuilt around Qwen3-1.7B-Base BF16."
+                    "The benchmark harness exists, and the precision gate now recommends BF16 as the active target, but the runtime is not yet rebuilt around Qwen3-4B-Base BF16."
                 ),
                 target_state=(
-                    "The first real benchmark table measures the active `Qwen3-1.7B-Base BF16 + GB10` contract and records a clear go / no-go conclusion."
+                    "The first real benchmark table measures the active `Qwen3-4B-Base BF16 + GB10` contract and records a clear go / no-go conclusion."
                 ),
                 code_surface=(
                     "src/leanstack/benchmark.py",
@@ -191,7 +191,7 @@ GAP_REGISTRY: dict[str, GapReport] = {
                     "scripts/render_benchmark_report.py",
                 ),
                 next_step=(
-                    "Rebuild the runtime around Qwen3-1.7B-Base BF16 first, then run the staged comparison protocol against exact-format BF16 external frameworks."
+                    "Rebuild the runtime around Qwen3-4B-Base BF16 first, then run the staged comparison protocol against exact-format BF16 external frameworks."
                 ),
                 risk=(
                     "Benchmarking too early will compare a partially retargeted runtime against mature frameworks and produce the wrong project conclusion."

@@ -8,27 +8,27 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         key="qwen",
         family="Qwen-family",
         loader_hint=(
-            "First target: maximize throughput on GB10/sm_121 with Qwen3-1.7B-Base BF16 while keeping the hot path "
+            "First target: maximize throughput on GB10/sm_121 with Qwen3-4B-Base BF16 while keeping the hot path "
             "inside `cuTile -> TileIR -> cubin`."
         ),
-        semantic_model_id="Qwen/Qwen3-1.7B-Base",
-        artifact_model_id="Qwen/Qwen3-1.7B-Base",
-        num_hidden_layers=28,
-        hidden_size=2048,
-        intermediate_size=6144,
-        num_attention_heads=16,
+        semantic_model_id="Qwen/Qwen3-4B-Base",
+        artifact_model_id="Qwen/Qwen3-4B-Base",
+        num_hidden_layers=36,
+        hidden_size=2560,
+        intermediate_size=9728,
+        num_attention_heads=32,
         num_key_value_heads=8,
         head_dim=128,
         vocab_size=151936,
         max_position_embeddings=32768,
         target_gpu="GB10 / sm_121",
-        remote_model_key="Qwen__Qwen3-1.7B-Base",
+        remote_model_key="Qwen__Qwen3-4B-Base",
         compile_gate=(
             "BF16 precision gate clears on sm_121. Official comparison path must keep decisive kernels on `cuTile -> TileIR -> cubin`."
         ),
         legacy_reference="Qwen3-32B BF16 borrowed and semantic runtime loops remain as larger-model legacy reference data.",
         dtype="bfloat16",
-        kv_layout="paged grouped-query attention (16 Q heads / 8 KV heads, head_dim 128)",
+        kv_layout="paged grouped-query attention (32 Q heads / 8 KV heads, head_dim 128)",
         backend_policy=(
             "Keep decisive kernels on `cuTile -> TileIR -> cubin` for the official comparison path.",
             "Use PTX only as a diagnostic aid when understanding a compiler miss, not as the benchmarked steady-state backend.",
@@ -59,14 +59,14 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         ),
         bring_up_sequence=(
             "keep the BF16 compiler path green on GB10/sm_121",
-            "load Qwen3-1.7B-Base config and BF16 checkpoint metadata",
+            "load Qwen3-4B-Base config and BF16 checkpoint metadata",
             "map dense BF16 linears into adapter-owned layouts",
             "bring up one BF16 transformer block forward path through cuTile/TileIR",
             "bring up prefill and decode with explicit KV reuse",
         ),
         static_contract=(
-            "Model semantics are fixed to Qwen3-1.7B-Base with 28 layers, hidden size 2048, intermediate size 6144, and GQA geometry 16Q/8KV/128.",
-            "Deployment target is fixed to the public Qwen3-1.7B-Base BF16 checkpoint on GB10 / sm_121.",
+            "Model semantics are fixed to Qwen3-4B-Base with 36 layers, hidden size 2560, intermediate size 9728, and GQA geometry 32Q/8KV/128.",
+            "Deployment target is fixed to the public Qwen3-4B-Base BF16 checkpoint on GB10 / sm_121.",
             "Only the user request is intended to stay dynamic; model geometry, precision policy, kernel inventory, and dispatch order should be fixed by the model-chip contract.",
             "KV page layout, RoPE policy, BF16 linear strategy, and MLP fusion rules are fixed by the adapter.",
             "Official benchmark buckets are fixed and exact, not merely capped: 64-token decode buckets and 1024-token prefill buckets.",
@@ -78,13 +78,13 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
             "Stopping condition derived from generated tokens or stop tokens.",
         ),
         deferred_compatibility=(
-            "Cross-model compatibility outside the first Qwen3-1.7B-Base BF16 contract.",
+            "Cross-model compatibility outside the first Qwen3-4B-Base BF16 contract.",
             "Cross-hardware portability beyond GB10 / sm_121.",
             "Framework-style automatic placement, fallback, and heterogeneous offload behavior.",
         ),
         notes=(
             "Treat the previous Qwen3-32B BF16 runtime work as a larger-model reference path, not the active first target.",
-            "Prefer relay-based model delivery if the remote host cannot fetch the Qwen3-1.7B-Base checkpoint directly.",
+            "Prefer relay-based model delivery if the remote host cannot fetch the Qwen3-4B-Base checkpoint directly.",
             "Treat TensorRT-LLM, vLLM, and SGLang as external baselines, not implementation dependencies.",
             "Treat broad compatibility as a deferred cost unless it is required by the first model-chip contract.",
             "Treat throughput as the primary optimization target, but only count wins that stay on the cuTile/TileIR path as official project evidence.",
@@ -94,7 +94,7 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
     "qwen-draft": ModelSpec(
         key="qwen-draft",
         family="Qwen-family",
-        loader_hint="Draft model for dual-model speculative decode: Qwen3-0.6B-Base as external draft for Qwen3-1.7B-Base verifier.",
+        loader_hint="Draft model for dual-model speculative decode: Qwen3-0.6B-Base as external draft for Qwen3-4B-Base verifier.",
         semantic_model_id="Qwen/Qwen3-0.6B-Base",
         artifact_model_id="Qwen/Qwen3-0.6B-Base",
         num_hidden_layers=28,
@@ -122,8 +122,8 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         ),
         notes=(
             "This is the draft model for dual-model speculative decode.",
-            "Shares vocabulary and tokenizer with the Qwen3-1.7B-Base verifier.",
-            "~0.6B params in BF16 ≈ 1.2 GB: genuinely smaller than the 3.4 GB verifier.",
+            "Shares vocabulary and tokenizer with the Qwen3-4B-Base verifier.",
+            "~0.6B params in BF16 ≈ 1.2 GB: genuinely smaller than the 4B verifier.",
         ),
     ),
     "glm": ModelSpec(

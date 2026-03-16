@@ -663,7 +663,7 @@ def run_dual_model_speculative_request(
     """Dual-model speculative decode: external draft model + full verifier.
 
     The draft model (e.g. Qwen3-0.6B) generates k proposal tokens autoregressively.
-    The verifier (e.g. Qwen3-1.7B) checks all k proposals in a single forward pass.
+    The verifier (e.g. Qwen3-4B) checks all k proposals in a single forward pass.
 
     Key insight: verification of k tokens ≈ cost of 1 decode step (bandwidth-bound),
     so throughput scales with draft model speed and acceptance rate.
@@ -1101,6 +1101,8 @@ def main() -> int:
         "prompt_text": exact_prompt_text,
         "prompt_tokens": int(input_ids.shape[-1]),
         "max_new_tokens": args.max_new_tokens,
+        "decode_policy": "greedy",
+        "ignore_eos": bool(args.ignore_eos),
         "resident_requests": args.resident_requests,
         "warmup_requests": args.warmup_requests,
         "emitted_tokens": int(last_result["emitted_tokens"]),

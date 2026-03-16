@@ -9,7 +9,7 @@ from typing import Any
 
 def _long_prefill_prompt() -> str:
     clause = (
-        "A fixed Qwen3-1.7B-Base and GB10 contract removes runtime discovery, minimizes compatibility heuristics, "
+        "A fixed Qwen3-4B-Base and GB10 contract removes runtime discovery, minimizes compatibility heuristics, "
         "and lets an agent specialize the cuTile path around one dense GQA model."
     )
     return " ".join(clause for _ in range(96))
@@ -60,8 +60,8 @@ BENCHMARK_PROFILES: dict[str, BenchmarkProfile] = {
     "decode_64_256": BenchmarkProfile(
         key="decode_64_256",
         title="Decode 64/256",
-        goal="Primary single-request decode-throughput profile for the fixed Qwen3-1.7B-Base contract.",
-        prompt="Explain how a fixed Qwen3-1.7B-Base and GB10 contract can reduce inference overhead.",
+        goal="Primary single-request decode-throughput profile for the fixed Qwen3-4B-Base contract.",
+        prompt="Explain how a fixed Qwen3-4B-Base and GB10 contract can reduce inference overhead.",
         prompt_format="raw",
         target_prompt_tokens=64,
         max_prefill_tokens=64,

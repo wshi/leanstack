@@ -15,7 +15,7 @@ leanstack tests a specific counter-thesis: **a stable virtual instruction set (V
 
 This is a two-phase project:
 
-**Phase 1 (current)** validates the thesis on NVIDIA GPU using Tile IR as the VIS. The first contract is `Qwen/Qwen3-1.7B-Base BF16` on `GB10 / sm_121`, with `cuTile -> TileIR -> cubin -> SASS` as the only official execution path. The target is `>= 1.30x` warmed vLLM throughput on the primary decode profile — not as an end in itself, but as evidence that the VIS-native approach produces real advantages.
+**Phase 1 (current)** validates the thesis on NVIDIA GPU using Tile IR as the VIS. The first contract is `Qwen/Qwen3-4B-Base BF16` on `GB10 / sm_121`, with `cuTile -> TileIR -> cubin -> SASS` as the only official execution path. The target is `>= 1.30x` vLLM-best throughput on the primary decode profile — not as an end in itself, but as evidence that the VIS-native approach produces real advantages.
 
 **Phase 2 (declared destination)** reproduces the methodology on custom silicon using our own tile-based VIS. The agent-synthesis pipeline, leanpack format, and economic measurement framework built in Phase 1 are designed to be retargetable.
 
@@ -29,7 +29,7 @@ The project measures three things simultaneously:
 
 1. The execution path must stay explicit down to `cuTile -> TileIR -> cubin -> SASS`.
 2. The runtime must stay small enough that an agent can regenerate and modify it cheaply.
-3. The first contract is a model-chip pair, `Qwen/Qwen3-1.7B-Base + BF16 checkpoint` on `GB10 / sm_121`, not "all models on all hardware."
+3. The first contract is a model-chip pair, `Qwen/Qwen3-4B-Base + BF16 checkpoint` on `GB10 / sm_121`, not "all models on all hardware."
 4. `vLLM`, `SGLang`, `llama.cpp`, and similar systems are compatibility-heavy baselines to compare against, not runtime dependencies.
 5. Remote validation on the DGX Spark machine is part of the development loop, not an afterthought.
 6. The target product is not a generic runtime. It is a `leanpack + leanserve` appliance: offline serving artifacts plus a static resident decode service.
@@ -42,7 +42,7 @@ The repo does seven concrete things:
 1. Defines a two-phase project thesis for VIS-centric agentic inference (see `docs/PROJECT_THESIS.md`).
 2. Provides local and remote tooling to validate the cuTile -> TileIR -> cubin -> SASS path.
 3. Keeps precision choice explicit through an executable BF16 / FP8 / FP4 gate on the remote machine.
-4. Builds the runtime around `Qwen/Qwen3-1.7B-Base` BF16 with explicit ownership of execution, KV cache, and kernel dispatch.
+4. Builds the runtime around `Qwen/Qwen3-4B-Base` BF16 with explicit ownership of execution, KV cache, and kernel dispatch.
 5. Defines `leanpack` and `leanserve` as the primary build products: packed serving artifacts and a static resident decode service.
 6. Defines a staged comparison protocol against `vLLM`, `SGLang`, and other external baselines, measuring both runtime efficiency and software-stack complexity.
 7. Captures a milestone roadmap (M1/M2/M3 for Phase 1, design principles for Phase 2) in `docs/ROADMAP.md`.
@@ -55,7 +55,7 @@ The repo does seven concrete things:
 - `docs/DSA_VIS_PROOF_PROTOCOL.md`: falsifiable protocol for proving VIS value on custom DSA using performance + regeneration-cost + retargetability together.
 - `docs/BENCHMARK_PLAN.md`: benchmark methodology and comparison rules.
 - `docs/COMPARISON_PROTOCOL.md`: staged comparison gates from framework baselines to cuTile kernels to full-stack results.
-- `docs/THROUGHPUT_30_PLAN.md`: the stronger `>= 1.30x warmed vLLM` target, why packing alone is not enough, and the exact speculative-decode plan.
+- `docs/THROUGHPUT_30_PLAN.md`: the stronger `>= 1.30x vLLM-best` target, why packing alone is not enough, and the exact speculative-decode plan.
 - `src/leanstack/appliance.py`: first-principles appliance reset plus `leanpack`/`leanserve` plan renderers.
 - `src/leanstack/leanserve.py`: packed-artifact loader, resident buffer planner, and semantic runtime materializer for `leanserve`.
 - `docs/LEANPACK_FORMAT.md`: initial serving-artifact format for `leanpack/v0`.
@@ -71,7 +71,7 @@ The repo does seven concrete things:
 - `experiments/cutile/torch_vector_add.py`: torch-backed minimal dtype probe for BF16 and FP8 reachability.
 - `experiments/cutile/precision_gate.py`: executable BF16 / FP8 / FP4 precision-gate probe for the current public cuTile install.
 - `experiments/cutile/fp4_compiler_gate.py`: executable FP4 compiler-gate probe for the current public cuTile install.
-- `experiments/cutile/qwen_bf16_hot_kernels.py`: BF16 hot-kernel microbench suite for the exact Qwen3-1.7B geometry.
+- `experiments/cutile/qwen_bf16_hot_kernels.py`: BF16 hot-kernel microbench suite for the exact Qwen3-4B geometry.
 - `experiments/models/hf_causal_lm_smoke.py`: baseline Hugging Face causal LM smoke path.
 - `experiments/models/qwen_explicit_block_probe.py`: explicit Qwen loader and layer-0 block/prefill/decode probe.
 - `experiments/models/qwen_explicit_stack_probe.py`: explicit multi-layer Qwen stack probe.
@@ -93,7 +93,7 @@ PYTHONPATH=src python3 -m leanstack.cli show-comparison-plan
 PYTHONPATH=src python3 -m leanstack.cli show-appliance-reset --model qwen
 PYTHONPATH=src python3 -m leanstack.cli show-leanpack-plan --model qwen
 PYTHONPATH=src python3 -m leanstack.cli show-leanserve-plan --model qwen
-PYTHONPATH=src python3 -m leanstack.cli build-leanpack --model qwen --model-path /path/to/Qwen3-1.7B-Base --output-dir ./artifacts/leanpack-qwen --manifest-only --overwrite
+PYTHONPATH=src python3 -m leanstack.cli build-leanpack --model qwen --model-path /path/to/Qwen3-4B-Base --output-dir ./artifacts/leanpack-qwen --manifest-only --overwrite
 PYTHONPATH=src python3 -m leanstack.cli inspect-leanpack --pack-dir ./artifacts/leanpack-qwen
 PYTHONPATH=src python3 -m leanstack.cli show-leanserve-layout --model qwen --pack-dir ./artifacts/leanpack-qwen
 PYTHONPATH=src python3 -m leanstack.cli list-hot-kernel-cases --default-only
@@ -108,12 +108,15 @@ PYTHONPATH=src python3 -m leanstack.cli show-gaps --model qwen
 ./scripts/remote_fp4_gate.sh
 ./scripts/remote_qwen_hot_kernel_bench.sh
 ./scripts/remote_model_probe.sh
-MODEL_ID=Qwen/Qwen3-1.7B-Base ./scripts/remote_qwen_fetch.sh
-MODEL_ID=Qwen/Qwen3-1.7B-Base OVERWRITE=1 ./scripts/remote_leanpack_build.sh
+MODEL_ID=Qwen/Qwen3-4B-Base ./scripts/remote_qwen_fetch.sh
+MODEL_ID=Qwen/Qwen3-4B-Base OVERWRITE=1 ./scripts/remote_leanpack_build.sh
 ./scripts/remote_leanserve_layout.sh
-MODEL_ID=Qwen/Qwen3-1.7B-Base ./scripts/remote_qwen_baseline.sh
-STRICT_CONTRACT=1 STRICT_PACKED=1 PROFILE=decode_64_256 MODEL_ID=Qwen/Qwen3-1.7B-Base ./scripts/remote_leanstack_benchmark.sh
-MODEL_NAME=qwen3-1.7b-base ./scripts/remote_openai_profile_sweep.sh
+MODEL_ID=Qwen/Qwen3-4B-Base ./scripts/remote_qwen_baseline.sh
+STRICT_CONTRACT=1 STRICT_PACKED=1 PROFILE=decode_64_256 MODEL_ID=Qwen/Qwen3-4B-Base ./scripts/remote_leanstack_benchmark.sh
+MODEL_NAME=qwen3-4b-base ./scripts/remote_openai_profile_sweep.sh
+PYTHONPATH=src python3 ./scripts/run_contract_benchmark_report.py
+PYTHONPATH=src python3 ./scripts/run_contract_benchmark_report.py --vllm-baseline-mode plain --vllm-baseline-runs 1
+python3 ./scripts/run_tests_with_report.py
 ```
 
 If remote Python runtime packages are missing:
@@ -129,7 +132,7 @@ If the remote machine cannot access a site directly, download on the Mac and rel
 ./scripts/push_local_file_to_remote.sh <local-path> <remote-path>
 ```
 
-`remote_qwen_fetch.sh` installs `modelscope` on the remote host if needed, downloads a Qwen snapshot into `/home/pto/lean/models`, and records the resolved local snapshot path so `remote_qwen_baseline.sh` can prefer the local copy over a public model id. For the active pivot, use it first for the `Qwen/Qwen3-1.7B-Base` BF16 contract.
+`remote_qwen_fetch.sh` installs `modelscope` on the remote host if needed, downloads a Qwen snapshot into `/home/pto/lean/models`, and records the resolved local snapshot path so `remote_qwen_baseline.sh` can prefer the local copy over a public model id. For the active pivot, use it first for the `Qwen/Qwen3-4B-Base` BF16 contract.
 
 For a metadata-only preflight before downloading the full checkpoint:
 
@@ -141,13 +144,13 @@ MODEL_ALLOW_PATTERN='*.json' ./scripts/remote_qwen_fetch.sh
 
 As of 2026-03-12, the active milestone remains **M1 — Appliance Proof** (see `docs/ROADMAP.md`), but with a stricter interpretation:
 
-- official comparison claims are now locked to the fixed contract `Qwen/Qwen3-1.7B-Base + BF16 + GB10/sm_121 + decode_64_256 + packed appliance`
+- official comparison claims are now locked to the fixed contract `Qwen/Qwen3-4B-Base + BF16 + GB10/sm_121 + decode_64_256 + packed appliance`
 - compare UI and remote benchmark paths enforce strict-packed and strict-contract guards
 - only this fixed-contract path is treated as evidence for the DSA VIS thesis
 
 Current data split:
 
-- official fixed-contract packed path: near warmed-`vLLM` parity (small lead, not yet a decisive margin)
+- official fixed-contract packed path: near plain-`vLLM` parity (small lead, not yet a decisive margin)
 - exploratory dual-model speculative path: can exceed `+30%`, but is not counted as core fixed-contract proof for the VIS-on-DSA argument
 
 Current precision gates:
